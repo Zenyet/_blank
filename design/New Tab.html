@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>New Tab — Design Explorations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body data-theme="dark">
+  <div id="root"></div>
+
+  <!-- Tweaks panel (managed outside React for simplicity) -->
+  <div class="tweaks" id="tweaks">
+    <h4>Tweaks</h4>
+    <div class="row">
+      <label>Theme</label>
+      <div class="toggle" id="tw-theme">
+        <button data-v="dark" class="active">Dark</button>
+        <button data-v="light">Light</button>
+      </div>
+    </div>
+    <div class="row">
+      <label>Accent</label>
+      <div class="swatches" id="tw-accent">
+        <span class="swatch active" data-h="55"  style="background: oklch(0.74 0.17 55)"></span>
+        <span class="swatch"        data-h="150" style="background: oklch(0.74 0.17 150)"></span>
+        <span class="swatch"        data-h="215" style="background: oklch(0.74 0.17 215)"></span>
+        <span class="swatch"        data-h="280" style="background: oklch(0.74 0.17 280)"></span>
+        <span class="swatch"        data-h="330" style="background: oklch(0.74 0.17 330)"></span>
+        <span class="swatch"        data-h="15"  style="background: oklch(0.74 0.17 15)"></span>
+      </div>
+    </div>
+    <div class="row">
+      <label>Density</label>
+      <div class="toggle" id="tw-density">
+        <button data-v="cozy"    class="active">Cozy</button>
+        <button data-v="compact">Compact</button>
+      </div>
+    </div>
+    <div class="row">
+      <label>Background</label>
+      <div class="toggle" id="tw-bg">
+        <button data-v="flat"   class="active">Flat</button>
+        <button data-v="grain">Grain</button>
+        <button data-v="grid">Grid</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Tweaks state (persisted wrapper for edit-mode host)
+    const TWEAKS = /*EDITMODE-BEGIN*/{
+      "theme": "dark",
+      "accentHue": 55,
+      "density": "cozy",
+      "bg": "flat",
+      "activeDesign": 1
+    }/*EDITMODE-END*/;
+
+    const saved = (() => { try { return JSON.parse(localStorage.getItem('newtab-tweaks')||'{}'); } catch { return {}; } })();
+    Object.assign(TWEAKS, saved);
+
+    function applyTweaks() {
+      document.body.dataset.theme = TWEAKS.theme;
+      document.documentElement.style.setProperty('--accent', `oklch(0.74 0.17 ${TWEAKS.accentHue})`);
+      document.documentElement.style.setProperty('--accent-soft', `oklch(0.74 0.17 ${TWEAKS.accentHue} / 0.14)`);
+      document.documentElement.style.setProperty('--accent-ink', `oklch(0.22 0.05 ${TWEAKS.accentHue})`);
+      document.body.dataset.density = TWEAKS.density;
+      document.body.dataset.bg = TWEAKS.bg;
+      // sync swatch / toggle active state
+      document.querySelectorAll('#tw-accent .swatch').forEach(s =>
+        s.classList.toggle('active', +s.dataset.h === +TWEAKS.accentHue));
+      document.querySelectorAll('#tw-theme button').forEach(b =>
+        b.classList.toggle('active', b.dataset.v === TWEAKS.theme));
+      document.querySelectorAll('#tw-density button').forEach(b =>
+        b.classList.toggle('active', b.dataset.v === TWEAKS.density));
+      document.querySelectorAll('#tw-bg button').forEach(b =>
+        b.classList.toggle('active', b.dataset.v === TWEAKS.bg));
+    }
+
+    function persistTweaks() {
+      localStorage.setItem('newtab-tweaks', JSON.stringify(TWEAKS));
+      try { window.parent.postMessage({type:'__edit_mode_set_keys', edits: TWEAKS}, '*'); } catch {}
+    }
+
+    // Wire tweak controls
+    document.getElementById('tw-accent').addEventListener('click', e => {
+      const h = e.target.dataset.h; if (!h) return;
+      TWEAKS.accentHue = +h; applyTweaks(); persistTweaks();
+    });
+    document.getElementById('tw-theme').addEventListener('click', e => {
+      const v = e.target.dataset.v; if (!v) return;
+      TWEAKS.theme = v; applyTweaks(); persistTweaks();
+    });
+    document.getElementById('tw-density').addEventListener('click', e => {
+      const v = e.target.dataset.v; if (!v) return;
+      TWEAKS.density = v; applyTweaks(); persistTweaks();
+    });
+    document.getElementById('tw-bg').addEventListener('click', e => {
+      const v = e.target.dataset.v; if (!v) return;
+      TWEAKS.bg = v; applyTweaks(); persistTweaks();
+    });
+
+    // Edit-mode protocol (register listener BEFORE announcing)
+    window.addEventListener('message', (ev) => {
+      const d = ev.data || {};
+      if (d.type === '__activate_edit_mode') {
+        document.getElementById('tweaks').classList.add('open');
+      } else if (d.type === '__deactivate_edit_mode') {
+        document.getElementById('tweaks').classList.remove('open');
+      }
+    });
+    try { window.parent.postMessage({type:'__edit_mode_available'}, '*'); } catch {}
+
+    applyTweaks();
+  </script>
+
+  <!-- Background textures via body[data-bg] -->
+  <style>
+    body[data-bg="grain"] {
+      background-image:
+        radial-gradient(oklch(1 0 0 / 0.025) 1px, transparent 1px),
+        radial-gradient(oklch(1 0 0 / 0.015) 1px, transparent 1px);
+      background-size: 3px 3px, 7px 7px;
+      background-position: 0 0, 1px 2px;
+    }
+    body[data-theme="light"][data-bg="grain"] {
+      background-image:
+        radial-gradient(oklch(0 0 0 / 0.04) 1px, transparent 1px),
+        radial-gradient(oklch(0 0 0 / 0.02) 1px, transparent 1px);
+    }
+    body[data-bg="grid"] {
+      background-image:
+        linear-gradient(to right, var(--line-soft) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--line-soft) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+    body[data-density="compact"] .card,
+    body[data-density="compact"] [data-card] { padding: 10px !important; }
+  </style>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script src="data.js"></script>
+  <script type="text/babel" src="designs/QuietDeck.jsx"></script>
+  <script type="text/babel" src="designs/CommandDeck.jsx"></script>
+  <script type="text/babel" src="designs/WorkspaceDock.jsx"></script>
+  <script type="text/babel" src="designs/Constellation.jsx"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function App() {
+      const [active, setActive] = useState(() => {
+        const s = +localStorage.getItem('newtab-active'); return Number.isFinite(s) && s >= 1 && s <= 4 ? s : 1;
+      });
+      useEffect(() => { localStorage.setItem('newtab-active', active); }, [active]);
+
+      useEffect(() => {
+        const onKey = (e) => {
+          if (e.metaKey || e.ctrlKey || e.altKey) return;
+          if (document.activeElement?.tagName === 'INPUT') return;
+          if (e.key === '1') setActive(1);
+          if (e.key === '2') setActive(2);
+          if (e.key === '3') setActive(3);
+          if (e.key === '4') setActive(4);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, []);
+
+      const labels = [
+        { n: 1, label: 'Quiet Deck',     sub: 'simplified' },
+        { n: 2, label: 'Command Deck',   sub: 'palette + heatmap' },
+        { n: 3, label: 'Workspace Dock', sub: 'spaces + sidebar' },
+        { n: 4, label: 'Constellation',  sub: 'radial canvas' },
+      ];
+
+      return (
+        <div className="shell" data-screen-label={`0${active} ${labels[active-1].label}`}>
+          <header className="topbar">
+            <div className="brand">
+              <span className="dot"/>
+              <span>NEW TAB · Design Explorations</span>
+            </div>
+            <div className="tabs" role="tablist">
+              {labels.map(l => (
+                <button key={l.n}
+                  role="tab"
+                  aria-selected={active === l.n}
+                  onClick={() => setActive(l.n)}>
+                  <span className="num">0{l.n}</span>
+                  <span>{l.label}</span>
+                  <span style={{color:'var(--fg-3)', fontSize:11}}>· {l.sub}</span>
+                </button>
+              ))}
+            </div>
+            <div className="right">
+              <span className="pill">⌘K palette</span>
+              <span className="pill">1 · 2 · 3 · 4</span>
+            </div>
+          </header>
+          <div className="stage">
+            {active === 1 && <QuietDeck />}
+            {active === 2 && <CommandDeck />}
+            {active === 3 && <WorkspaceDock />}
+            {active === 4 && <Constellation />}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

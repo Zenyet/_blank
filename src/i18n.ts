@@ -1,0 +1,128 @@
+// Centralized Chinese copy for the extension UI.
+// Kept as a single module so it's easy to tweak wording or later swap in i18n.
+
+export const copy = {
+  brand: '新标签页 · 四种视觉',
+
+  tabs: [
+    { n: 1, label: '简约', sub: '安静、快速' },
+    { n: 2, label: '指挥台', sub: '命令面板 + 热力图' },
+    { n: 3, label: '工作区', sub: '分组 + 侧栏' },
+    { n: 4, label: '星图', sub: '径向画布' },
+  ],
+
+  pill: {
+    palette: '⌘K 命令面板',
+    numbers: '1 · 2 · 3 · 4',
+  },
+
+  loading: '加载中…',
+
+  greeting: {
+    lateNight: '深夜好',
+    morning: '早安',
+    afternoon: '午后好',
+    evening: '晚上好',
+  },
+
+  quiet: {
+    triggerPlaceholder: '搜索或跳转…',
+    emptyGrid: '还没有书签。在 Chrome 中添加后会显示在这里。',
+    emptyRecents: '最近访问会显示在这里。',
+    paletteHint: '搜索站点、命令或任何问题…',
+    paletteEmpty: '按 Enter 用 Google 搜索。',
+  },
+
+  command: {
+    metaDeck: '工作台',
+    online: '在线',
+    offline: '离线',
+    searchGoogle: (q: string) => `在 Google 搜索 "${q}"`,
+    searchGitHub: (q: string) => `在 GitHub 搜索 "${q}"`,
+    searchYouTube: (q: string) => `在 YouTube 搜索 "${q}"`,
+    searchMDN: (q: string) => `在 MDN 搜索 "${q}"`,
+    actions: {
+      newDoc: '新建 Google 文档',
+      newSheet: '新建表格',
+      newMeet: '发起 Meet 会议',
+    },
+    placeholder: '输入命令、网址或问题…',
+    noMatches: '没有匹配项。按 Enter 用 Google 搜索。',
+    foot: {
+      navigate: '选择',
+      open: '打开',
+      newTab: '新标签页打开',
+    },
+    countResults: (n: number) => `${n} 项`,
+    frequency: '访问频次',
+    freqSub: '按访问次数排序 · 近 30 天',
+    legendLess: '少',
+    legendMore: '多',
+    emptyBookmarks: '没有书签。',
+    today: '今天',
+    todayMeta: (open: number, done: number) => `${open} 待完成 · ${done} 已完成`,
+    recent: '最近访问',
+    recentSub: '近 2 小时',
+    emptyRecents: '没有最近访问。',
+    newTask: '＋ 新任务',
+    newTaskPlaceholder: '接下来做什么？',
+    removeTask: '删除任务',
+    kinds: {
+      open: '打开',
+      search: '搜索',
+      action: '动作',
+      Quick: '快捷',
+      Search: '搜索',
+    },
+  },
+
+  workspace: {
+    crumb: '空间',
+    newFolder: '新建分组',
+    newFolderPlaceholder: '分组名称',
+    deleteFolder: '删除空分组',
+    cannotDeleteNonEmpty: '分组中还有书签，请先清空。',
+    filter: (label: string) => `在 ${label} 中过滤…或直接搜索 Web`,
+    bookmarks: '书签',
+    countIn: (n: number, label: string) => `${n} 项 · ${label}`,
+    emptyFiltered: (label: string) => `${label} 中没有匹配项。`,
+    pinned: '置顶',
+    recentToday: '今日',
+    recentEmpty: '没有最近访问。',
+    todayLabel: '今天',
+    todayOpen: (n: number) => `${n} 待完成`,
+    addBookmark: '添加',
+    addBookmarkTitle: '添加书签',
+    editBookmarkTitle: '编辑书签',
+    deleteBookmark: '删除书签',
+    rename: '重命名',
+    bookmarkName: '名称',
+    bookmarkUrl: '网址',
+    bookmarkGroup: '分组',
+    ok: '保存',
+    cancel: '取消',
+  },
+
+  constellation: {
+    filterPlaceholder: '过滤星图…',
+    matchCount: (n: number) => `${n} 项匹配`,
+    siteCount: (n: number) => `${n} 个站点`,
+    sizeLegend: '大小 = 访问次数',
+    distanceLegend: '距离越近 = 越常用',
+    summary: (sites: number, clusters: number) => `${sites} 个站点 · ${clusters} 个分组`,
+    today: '今天',
+    stripTop: '常用',
+    stripRecent: '最近',
+  },
+
+  tweaks: {
+    title: '偏好',
+    theme: '主题',
+    themes: { dark: '深色', light: '浅色' },
+    accent: '色调',
+    density: '密度',
+    densities: { cozy: '宽松', compact: '紧凑' },
+    bg: '背景',
+    bgs: { flat: '纯色', grain: '颗粒', grid: '网格' },
+  },
+};

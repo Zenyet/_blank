@@ -1,0 +1,69 @@
+/* Design tokens — ported from design/styles.css */
+:root {
+  --bg: oklch(0.18 0.008 60);
+  --bg-1: oklch(0.22 0.008 60);
+  --bg-2: oklch(0.26 0.008 60);
+  --bg-3: oklch(0.32 0.008 60);
+  --line: oklch(0.36 0.008 60);
+  --line-soft: oklch(0.30 0.008 60);
+  --fg: oklch(0.96 0.006 80);
+  --fg-1: oklch(0.82 0.006 80);
+  --fg-2: oklch(0.64 0.008 80);
+  --fg-3: oklch(0.48 0.008 80);
+  --accent: oklch(0.74 0.17 55);
+  --accent-ink: oklch(0.22 0.05 55);
+  --accent-soft: oklch(0.74 0.17 55 / 0.14);
+  --good: oklch(0.78 0.14 150);
+  --info: oklch(0.78 0.12 240);
+  --warn: oklch(0.80 0.15 80);
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 16px;
+
+  --font-sans: 'Geist', 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace;
+
+  --shadow-sm: 0 1px 0 oklch(1 0 0 / 0.04) inset, 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-md: 0 1px 0 oklch(1 0 0 / 0.05) inset, 0 8px 24px oklch(0 0 0 / 0.4);
+  --shadow-lg: 0 1px 0 oklch(1 0 0 / 0.06) inset, 0 20px 60px oklch(0 0 0 / 0.55);
+}
+
+[data-theme='light'] {
+  --bg: oklch(0.98 0.004 80);
+  --bg-1: oklch(0.96 0.004 80);
+  --bg-2: oklch(0.93 0.005 80);
+  --bg-3: oklch(0.89 0.006 80);
+  --line: oklch(0.84 0.006 80);
+  --line-soft: oklch(0.90 0.005 80);
+  --fg: oklch(0.22 0.01 80);
+  --fg-1: oklch(0.36 0.01 80);
+  --fg-2: oklch(0.52 0.01 80);
+  --fg-3: oklch(0.68 0.008 80);
+  --shadow-sm: 0 1px 0 oklch(1 0 0 / 0.6) inset, 0 1px 2px oklch(0 0 0 / 0.06);
+  --shadow-md: 0 1px 0 oklch(1 0 0 / 0.8) inset, 0 6px 18px oklch(0 0 0 / 0.08);
+  --shadow-lg: 0 1px 0 oklch(1 0 0 / 0.9) inset, 0 20px 50px oklch(0 0 0 / 0.12);
+}
+
+body[data-bg='grain'] {
+  background-image:
+    radial-gradient(oklch(1 0 0 / 0.025) 1px, transparent 1px),
+    radial-gradient(oklch(1 0 0 / 0.015) 1px, transparent 1px);
+  background-size: 3px 3px, 7px 7px;
+  background-position: 0 0, 1px 2px;
+}
+body[data-theme='light'][data-bg='grain'] {
+  background-image:
+    radial-gradient(oklch(0 0 0 / 0.04) 1px, transparent 1px),
+    radial-gradient(oklch(0 0 0 / 0.02) 1px, transparent 1px);
+}
+body[data-bg='grid'] {
+  background-image:
+    linear-gradient(to right, var(--line-soft) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line-soft) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+body[data-density='compact'] .card,
+body[data-density='compact'] [data-card] {
+  padding: 10px !important;
+}
