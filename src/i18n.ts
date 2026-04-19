@@ -104,11 +104,11 @@ export const copy = {
   },
 
   constellation: {
-    filterPlaceholder: '过滤星图…',
+    filterPlaceholder: '过滤图…',
     matchCount: (n: number) => `${n} 项匹配`,
     siteCount: (n: number) => `${n} 个站点`,
-    sizeLegend: '大小 = 访问次数',
-    distanceLegend: '距离越近 = 越常用',
+    sizeLegend: '节点颜色 = 所属分组',
+    distanceLegend: '连线 = 手动关联（Shift+拖拽创建）',
     summary: (sites: number, clusters: number) => `${sites} 个站点 · ${clusters} 个分组`,
     today: '今天',
     stripTop: '常用',

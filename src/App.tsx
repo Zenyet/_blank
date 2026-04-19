@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useChromeData } from './hooks/useChromeData';
 import { useSettings } from './hooks/useSettings';
 import { Tweaks } from './components/Tweaks';
-import { Constellation } from './designs/Constellation';
+import { Graph } from './designs/Graph/Graph';
 import { copy } from './i18n';
 import './styles/tokens.css';
 import './styles/shell.css';
@@ -34,7 +34,7 @@ export default function App() {
   return (
     <div className="shell">
       <div className="stage">
-        <Constellation data={data} />
+        <Graph data={data} />
       </div>
       <Tweaks
         settings={settings}

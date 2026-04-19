@@ -236,14 +236,8 @@ a { color: inherit; }
   color: var(--fg);
 }
 
-/* Hover helpers (for inline-style components) */
-[data-qd-cell]:hover { background: var(--bg-1); }
-[data-qd-recent]:hover { background: var(--bg-1); }
-[data-bm-card]:hover { border-color: var(--line); background: var(--bg-2); }
-[data-heat-item]:hover { background: var(--bg-3); }
+/* Hover helpers */
 [data-strip-chip]:hover { background: var(--bg-3); }
-[data-pinned]:hover { background: var(--bg-3); }
-[data-engine-btn]:hover { color: var(--fg); }
 
 /* Loading + empty states */
 .empty {
