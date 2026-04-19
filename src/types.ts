@@ -60,3 +60,35 @@ export interface ChromeData {
   barId: string | null;
   source: 'chrome' | 'fallback';
 }
+
+export interface GraphEdge {
+  id: string;
+  from: string;
+  to: string;
+  kind: 'manual';
+  label?: string;
+}
+
+export interface GraphPin {
+  x: number;
+  y: number;
+}
+
+export type PinsMap = Record<string, GraphPin>;
+
+export interface Camera {
+  scale: number;
+  tx: number;
+  ty: number;
+}
+
+export interface GraphNode extends Bookmark {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  fx?: number | null;
+  fy?: number | null;
+  radius: number;
+  groupHue: number;
+}
