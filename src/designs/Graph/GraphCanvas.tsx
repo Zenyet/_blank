@@ -13,6 +13,10 @@ interface Props {
   edges: GraphEdge[];
   pins: PinsMap;
   filterText: string;
+  /** Precomputed set of bookmark ids that match the current filter. Passed
+   *  in from the parent so the renderer doesn't have to re-derive it every
+   *  animation frame. `null` means "no active filter". */
+  filterMatches: Set<string> | null;
   /** When set, camera dolly-zooms onto this node. When cleared, camera resets. */
   focusBookmarkId: string | null;
   /** When set, draw a soft hull around the group's nodes. */
@@ -47,6 +51,9 @@ export function GraphCanvas(props: Props) {
   const panRef = useRef<{ startX: number; startY: number; tx0: number; ty0: number } | null>(null);
   const needsFrameRef = useRef(true);
   const lastSizeRef = useRef({ width: 0, height: 0, dpr: 1 });
+  // Mirror the filter-match set into a ref so the rAF loop can read it
+  // without having to resubscribe itself each time the filter changes.
+  const filterMatchesRef = useRef<Set<string> | null>(props.filterMatches);
 
   // Preload favicons whenever bookmarks change.
   useEffect(() => {
@@ -60,10 +67,14 @@ export function GraphCanvas(props: Props) {
   // Force a redraw whenever render-relevant props change. Without this the
   // rAF loop would skip frames when the simulation has cooled (alpha ≈ 0),
   // causing e.g. filter changes to not paint until the next interaction.
+  // Also syncs `filterMatchesRef` so the rAF loop can read the latest set
+  // without being recreated on every keystroke.
   useEffect(() => {
+    filterMatchesRef.current = props.filterMatches;
     needsFrameRef.current = true;
   }, [
     props.filterText,
+    props.filterMatches,
     props.edges,
     props.pins,
     props.bookmarks,
@@ -143,7 +154,6 @@ export function GraphCanvas(props: Props) {
       if (active) {
         if (simulation && alpha > 0.003) simulation.tick();
 
-        const filterMatches = deriveFilter(props.bookmarks, props.filterText);
         const state: RenderState = {
           nodes: sim.nodesRef.current,
           edges: props.edges,
@@ -151,7 +161,7 @@ export function GraphCanvas(props: Props) {
           hoverNodeId: hoverNodeRef.current,
           hoverEdgeId: hoverEdgeRef.current,
           draggingId: dragIdRef.current,
-          filterMatches,
+          filterMatches: filterMatchesRef.current,
           ghost: ghostRef.current,
           favicons: faviconsRef.current,
           highlightGroupId: props.highlightGroupId,
@@ -176,7 +186,9 @@ export function GraphCanvas(props: Props) {
       cancelAnimationFrame(raf);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, [sim, props.bookmarks, props.edges, props.pins, props.filterText, camera]);
+    // filterMatches is read via filterMatchesRef so it doesn't belong here;
+    // recreating the rAF loop on each keystroke would just churn timers.
+  }, [sim, props.bookmarks, props.edges, props.pins, camera]);
 
   // Pointer events.
   useEffect(() => {
@@ -372,18 +384,6 @@ export function GraphCanvas(props: Props) {
       <canvas ref={canvasRef} style={canvasStyle} />
     </div>
   );
-}
-
-function deriveFilter(bookmarks: Bookmark[], text: string): Set<string> | null {
-  const q = text.trim().toLowerCase();
-  if (!q) return null;
-  const matches = new Set<string>();
-  for (const b of bookmarks) {
-    if ((b.name + ' ' + b.url + ' ' + b.group).toLowerCase().includes(q)) {
-      matches.add(b.id);
-    }
-  }
-  return matches;
 }
 
 const wrapStyle: CSSProperties = {

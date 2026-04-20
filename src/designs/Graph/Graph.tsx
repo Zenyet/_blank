@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Bookmark, ChromeData, GraphEdge, Group, PinsMap } from '../../types';
 import { BookmarkDialog } from '../../components/BookmarkDialog';
 import { ContextMenu, type MenuItem } from '../../components/ContextMenu';
@@ -240,20 +240,48 @@ export function Graph({ data }: Props) {
   };
 
   const filterQuery = filter.trim().toLowerCase();
-  const filterMatches = filterQuery
-    ? data.bookmarks.filter((b) =>
-        (b.name + ' ' + b.url + ' ' + b.group).toLowerCase().includes(filterQuery)
-      )
-    : [];
-  const topMatch = filterQuery
-    ? [...filterMatches].sort((a, b) => b.visits - a.visits)[0]
-    : null;
-  // Trigger the Hitchcock-style focus zoom as soon as the query narrows to a
-  // single match — no need to type the full name. The prior "exact name
-  // match" rule was strictly stronger than this one (an exact match always
-  // produces a result set of size 1 unless two bookmarks share a name), so
-  // this only loosens when.
-  const focusMatch = filterQuery && filterMatches.length === 1 ? filterMatches[0]! : null;
+
+  // Pre-build a `id → lowercased haystack` map once per bookmarks change.
+  // Keeps filter evaluation to a single cheap `.includes` per bookmark
+  // instead of re-concatenating and re-lowercasing on every keystroke.
+  const haystacks = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of data.bookmarks) {
+      map.set(b.id, `${b.name} ${b.url} ${b.group}`.toLowerCase());
+    }
+    return map;
+  }, [data.bookmarks]);
+
+  // Single memoized source of truth for filter results — consumers get
+  // either the Set (O(1) membership for the renderer) or the list (for UI
+  // counts, sorting, focus detection). Only recomputes when the query or
+  // the bookmarks list changes, not on every unrelated re-render.
+  const { matchSet, matchList } = useMemo(() => {
+    if (!filterQuery) return { matchSet: null as Set<string> | null, matchList: [] as Bookmark[] };
+    const set = new Set<string>();
+    const list: Bookmark[] = [];
+    for (const b of data.bookmarks) {
+      const hay = haystacks.get(b.id);
+      if (hay && hay.includes(filterQuery)) {
+        set.add(b.id);
+        list.push(b);
+      }
+    }
+    return { matchSet: set, matchList: list };
+  }, [filterQuery, data.bookmarks, haystacks]);
+
+  const topMatch = useMemo(() => {
+    if (matchList.length === 0) return null;
+    let best = matchList[0]!;
+    for (let i = 1; i < matchList.length; i++) {
+      if (matchList[i]!.visits > best.visits) best = matchList[i]!;
+    }
+    return best;
+  }, [matchList]);
+
+  // Trigger the Hitchcock-style focus zoom as soon as the query narrows to
+  // a single match — no need to type the full name.
+  const focusMatch = matchList.length === 1 ? matchList[0]! : null;
 
   const onFilterKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && topMatch) {
@@ -270,6 +298,7 @@ export function Graph({ data }: Props) {
         edges={edges}
         pins={pins}
         filterText={filter}
+        filterMatches={matchSet}
         focusBookmarkId={focusMatch?.id ?? null}
         highlightGroupId={activeGroupId}
         hueOverrides={groupHues}
@@ -310,13 +339,13 @@ export function Graph({ data }: Props) {
               className="mono"
               style={{
                 fontSize: 11,
-                color: filterMatches.length > 0 ? 'var(--fg-2)' : 'var(--warn)',
+                color: matchList.length > 0 ? 'var(--fg-2)' : 'var(--warn)',
                 whiteSpace: 'nowrap',
               }}
               title={topMatch ? `回车打开：${topMatch.name}` : '没有匹配的书签'}
             >
-              {filterMatches.length > 0
-                ? `${filterMatches.length} · ↵`
+              {matchList.length > 0
+                ? `${matchList.length} · ↵`
                 : '无结果'}
             </span>
           ) : (
