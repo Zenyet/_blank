@@ -248,11 +248,12 @@ export function Graph({ data }: Props) {
   const topMatch = filterQuery
     ? [...filterMatches].sort((a, b) => b.visits - a.visits)[0]
     : null;
-  // Exact match = query equals a bookmark name (trimmed, case-insensitive).
-  // When present we trigger a Hitchcock-style focus zoom on that node.
-  const exactMatch = filterQuery
-    ? data.bookmarks.find((b) => b.name.trim().toLowerCase() === filterQuery) ?? null
-    : null;
+  // Trigger the Hitchcock-style focus zoom as soon as the query narrows to a
+  // single match — no need to type the full name. The prior "exact name
+  // match" rule was strictly stronger than this one (an exact match always
+  // produces a result set of size 1 unless two bookmarks share a name), so
+  // this only loosens when.
+  const focusMatch = filterQuery && filterMatches.length === 1 ? filterMatches[0]! : null;
 
   const onFilterKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && topMatch) {
@@ -269,7 +270,7 @@ export function Graph({ data }: Props) {
         edges={edges}
         pins={pins}
         filterText={filter}
-        focusBookmarkId={exactMatch?.id ?? null}
+        focusBookmarkId={focusMatch?.id ?? null}
         highlightGroupId={activeGroupId}
         hueOverrides={groupHues}
         onRequestEdge={onRequestEdge}

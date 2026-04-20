@@ -71,8 +71,9 @@ export function GraphCanvas(props: Props) {
     props.hueOverrides,
   ]);
 
-  // Dolly-zoom onto exact-match node, or drift camera back to identity when
-  // the exact match is cleared. Nothing happens for partial matches.
+  // Dolly-zoom onto the focus node (triggered when the search narrows to a
+  // single match), or drift camera back to identity when focus is cleared.
+  // Nothing happens while multiple candidates remain.
   useEffect(() => {
     const id = props.focusBookmarkId;
     if (id) {
