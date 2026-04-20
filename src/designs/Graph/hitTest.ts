@@ -1,18 +1,23 @@
-import { quadtree, type Quadtree } from 'd3-quadtree';
 import type { GraphEdge, GraphNode } from '../../types';
+import { Quadtree } from './sim/barnesHut';
 
-export type NodeIndex = Quadtree<GraphNode>;
+/**
+ * A spatial index over nodes for fast mouse hit-testing. We reuse the
+ * same `Quadtree` implementation the physics engine uses for Barnes–Hut,
+ * because the underlying data structure (a point quadtree over node
+ * positions) is identical — only the query differs.
+ */
+export type NodeIndex = Quadtree;
 
 export function buildNodeIndex(nodes: GraphNode[]): NodeIndex {
-  return quadtree<GraphNode>()
-    .x((n) => n.x)
-    .y((n) => n.y)
-    .addAll(nodes);
+  const q = new Quadtree(Math.max(64, nodes.length * 2));
+  q.build(nodes);
+  return q;
 }
 
 /** Return the nearest node whose radius contains (x, y), else null. */
 export function findNodeAt(tree: NodeIndex, x: number, y: number): GraphNode | null {
-  const candidate = tree.find(x, y);
+  const candidate = tree.findNearest(x, y);
   if (!candidate) return null;
   const dx = candidate.x - x;
   const dy = candidate.y - y;
