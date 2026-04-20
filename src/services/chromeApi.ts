@@ -1,6 +1,16 @@
 import type { Bookmark, ChromeData, Group, HistoryItem, Settings } from '../types';
 import { FALLBACK_BOOKMARKS, FALLBACK_GROUPS, FALLBACK_RECENTS } from '../data/fallback';
 import { DEFAULT_SETTINGS } from '../types';
+import {
+  mockCreateBookmark,
+  mockCreateFolder,
+  mockLoadData,
+  mockMove,
+  mockRemove,
+  mockRemoveTree,
+  mockSubscribe,
+  mockUpdate,
+} from './mockBookmarks';
 
 // ─── Chrome API detection ─────────────────────────────────────────────────
 
@@ -86,50 +96,54 @@ async function loadBookmarks(): Promise<{
   const bookmarks: Bookmark[] = [];
   const groups: Group[] = [];
 
-  // Loose bookmarks (direct children of the bar) go into a virtual "置顶" group
-  // whose id is barId. Folders at the first level each become a group.
-  const loose = bar.children.filter((n) => n.url);
-  if (loose.length > 0) {
-    groups.push({ id: barId, label: '置顶' });
-    loose.forEach((b) => {
-      if (!b.url) return;
-      bookmarks.push({
-        id: b.id,
-        parentId: b.parentId || barId,
-        name: b.title || domainOf(b.url),
-        url: b.url,
-        group: '置顶',
-        color: colorFor(b.url),
-        letter: letterFor(b.title || domainOf(b.url)),
-        visits: 0,
-        last: '—',
-      });
-    });
-  }
-
-  const folders = bar.children.filter((n) => !n.url);
-  for (const folder of folders) {
-    const label = folder.title || '未命名';
-    groups.push({ id: folder.id, label });
-    const walk = (node: chrome.bookmarks.BookmarkTreeNode) => {
-      if (node.url) {
+  // Walk the full sub-tree under the bar. Every folder becomes its own
+  // group with a `parentGroupId` link so the UI can render nested folders
+  // as a tree. URL bookmarks keep their immediate `parentId` — which now
+  // consistently points to a group id — so graph clustering "just works"
+  // for nested folders too.
+  const walk = (
+    node: chrome.bookmarks.BookmarkTreeNode,
+    groupLabelForUrls: string,
+    depth: number
+  ) => {
+    if (!node.children) return;
+    const looseUnderThis = node.children.some((c) => c.url);
+    if (looseUnderThis && node.id === barId) {
+      // Loose bookmarks directly on the bar fall under a virtual "置顶" group
+      // whose id reuses barId (matches prior behaviour so users see them
+      // grouped visually).
+      if (!groups.some((g) => g.id === barId)) {
+        groups.push({ id: barId, label: '置顶', parentGroupId: null, depth: 0 });
+      }
+    }
+    for (const child of node.children) {
+      if (child.url) {
+        const label = child.title || domainOf(child.url);
         bookmarks.push({
-          id: node.id,
-          parentId: node.parentId || folder.id,
-          name: node.title || domainOf(node.url),
-          url: node.url,
-          group: label,
-          color: colorFor(node.url),
-          letter: letterFor(node.title || domainOf(node.url)),
+          id: child.id,
+          parentId: child.parentId || node.id,
+          name: label,
+          url: child.url,
+          group: groupLabelForUrls,
+          color: colorFor(child.url),
+          letter: letterFor(label),
           visits: 0,
           last: '—',
         });
-      } else if (node.children) {
-        node.children.forEach(walk);
+      } else {
+        const subLabel = child.title || '未命名';
+        const childDepth = node.id === barId ? 0 : depth + 1;
+        groups.push({
+          id: child.id,
+          label: subLabel,
+          parentGroupId: node.id === barId ? null : node.id,
+          depth: childDepth,
+        });
+        walk(child, subLabel, childDepth);
       }
-    };
-    folder.children?.forEach(walk);
-  }
+    }
+  };
+  walk(bar, '置顶', 0);
 
   return { bookmarks, groups, barId };
 }
@@ -195,7 +209,13 @@ async function loadTopSites(barId: string): Promise<{ bookmarks: Bookmark[]; gro
       visits: 100 - i * 3,
       last: '—',
     }));
-    return { bookmarks: bms, groups: bms.length > 0 ? [{ id: barId, label: '常用' }] : [] };
+    return {
+      bookmarks: bms,
+      groups:
+        bms.length > 0
+          ? [{ id: barId, label: '常用', parentGroupId: null, depth: 0 }]
+          : [],
+    };
   } catch {
     return { bookmarks: [], groups: [] };
   }
@@ -205,11 +225,15 @@ async function loadTopSites(barId: string): Promise<{ bookmarks: Bookmark[]; gro
 
 export async function loadChromeData(): Promise<ChromeData> {
   if (!hasChromeApi) {
+    // In dev we back CRUD with a localStorage-based mock, so loading just
+    // replays that state. First-run seeds from the FALLBACK fixtures so the
+    // initial screen looks identical to the old read-only fallback path.
+    const m = mockLoadData();
     return {
-      bookmarks: FALLBACK_BOOKMARKS,
-      recents: FALLBACK_RECENTS,
-      groups: FALLBACK_GROUPS,
-      barId: null,
+      bookmarks: m.bookmarks,
+      recents: m.recents,
+      groups: m.groups,
+      barId: m.barId,
       source: 'fallback',
     };
   }
@@ -246,13 +270,18 @@ export async function loadChromeData(): Promise<ChromeData> {
 
 // ─── CRUD on bookmarks and folders ────────────────────────────────────────
 
-export async function createBookmark(parentId: string, title: string, url: string): Promise<void> {
-  if (!hasChromeApi) return;
-  await chrome.bookmarks.create({ parentId, title, url });
+export async function createBookmark(
+  parentId: string,
+  title: string,
+  url: string
+): Promise<string> {
+  if (!hasChromeApi) return mockCreateBookmark(parentId, title, url);
+  const node = await chrome.bookmarks.create({ parentId, title, url });
+  return node.id;
 }
 
 export async function removeBookmark(id: string): Promise<void> {
-  if (!hasChromeApi) return;
+  if (!hasChromeApi) return mockRemove(id);
   await chrome.bookmarks.remove(id);
 }
 
@@ -260,7 +289,7 @@ export async function updateBookmark(
   id: string,
   changes: { title?: string; url?: string }
 ): Promise<void> {
-  if (!hasChromeApi) return;
+  if (!hasChromeApi) return mockUpdate(id, changes);
   await chrome.bookmarks.update(id, changes);
 }
 
@@ -268,29 +297,39 @@ export async function moveBookmark(
   id: string,
   dest: { parentId?: string; index?: number }
 ): Promise<void> {
-  if (!hasChromeApi) return;
+  if (!hasChromeApi) return mockMove(id, dest);
   await chrome.bookmarks.move(id, dest);
 }
 
-export async function createFolder(parentId: string, title: string): Promise<void> {
-  if (!hasChromeApi) return;
-  await chrome.bookmarks.create({ parentId, title });
+export async function createFolder(parentId: string, title: string): Promise<string> {
+  if (!hasChromeApi) return mockCreateFolder(parentId, title);
+  const node = await chrome.bookmarks.create({ parentId, title });
+  return node.id;
 }
 
 export async function renameFolder(id: string, title: string): Promise<void> {
-  if (!hasChromeApi) return;
+  if (!hasChromeApi) return mockUpdate(id, { title });
   await chrome.bookmarks.update(id, { title });
 }
 
 export async function removeFolder(id: string): Promise<void> {
-  if (!hasChromeApi) return;
+  if (!hasChromeApi) return mockRemoveTree(id);
   await chrome.bookmarks.removeTree(id);
+}
+
+export async function moveFolder(
+  id: string,
+  dest: { parentId?: string; index?: number }
+): Promise<void> {
+  if (!hasChromeApi) return mockMove(id, dest);
+  await chrome.bookmarks.move(id, dest);
 }
 
 // ─── Bookmark change subscription ─────────────────────────────────────────
 
 export function subscribeBookmarkChanges(cb: () => void): () => void {
-  if (!hasChromeApi || !chrome.bookmarks.onCreated) return () => {};
+  if (!hasChromeApi) return mockSubscribe(cb);
+  if (!chrome.bookmarks.onCreated) return () => {};
   const handlers: Array<() => void> = [];
   const register = <T extends chrome.events.Event<(...args: any[]) => void>>(
     ev: T

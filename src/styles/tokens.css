@@ -63,6 +63,26 @@ body[data-bg='grid'] {
     linear-gradient(to bottom, var(--line-soft) 1px, transparent 1px);
   background-size: 48px 48px;
 }
+/* Custom image background. The ::before layer lets us layer a dimming tint
+   above the photo without darkening UI on top of it. */
+body[data-bg='image'] {
+  background-image: var(--bg-image, none);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+body[data-bg='image']::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background: oklch(0 0 0 / var(--bg-image-dim, 0.35));
+}
+body[data-theme='light'][data-bg='image']::before {
+  background: oklch(1 0 0 / var(--bg-image-dim, 0.25));
+}
 body[data-density='compact'] .card,
 body[data-density='compact'] [data-card] {
   padding: 10px !important;

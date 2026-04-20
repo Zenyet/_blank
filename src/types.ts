@@ -1,6 +1,13 @@
 export interface Group {
   id: string;
   label: string;
+  /** ID of this group's parent folder, or `null` if it sits directly under
+   *  the bookmarks bar root. Lets the UI render a nested tree while the
+   *  underlying list stays flat. */
+  parentGroupId: string | null;
+  /** 0 for top-level, 1 for subgroups of a top-level, etc. Pre-computed to
+   *  avoid re-walking the parent chain at render time. */
+  depth: number;
 }
 
 export interface Bookmark {
@@ -36,13 +43,18 @@ export interface Quote {
 
 export type Theme = 'dark' | 'light';
 export type Density = 'cozy' | 'compact';
-export type BgPattern = 'flat' | 'grain' | 'grid';
+export type BgPattern = 'flat' | 'grain' | 'grid' | 'image';
 
 export interface Settings {
   theme: Theme;
   accentHue: number;
   density: Density;
   bg: BgPattern;
+  /** Only used when `bg === 'image'`. A data URL (uploaded) or remote URL. */
+  bgImage: string | null;
+  /** 0..1. Darkening overlay on top of the background image so foreground
+   *  text stays legible. */
+  bgImageDim: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -50,6 +62,8 @@ export const DEFAULT_SETTINGS: Settings = {
   accentHue: 55,
   density: 'cozy',
   bg: 'flat',
+  bgImage: null,
+  bgImageDim: 0.35,
 };
 
 export interface ChromeData {

@@ -1,21 +1,31 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import type { Bookmark, ChromeData, GraphEdge, Group, PinsMap } from '../../types';
 import { BookmarkDialog } from '../../components/BookmarkDialog';
 import { ContextMenu, type MenuItem } from '../../components/ContextMenu';
+import { HuePalette } from '../../components/ColorPicker';
+import { GroupsPanel } from '../../components/GroupsPanel';
 import { Modal } from '../../components/Modal';
-import { TodoPanel } from '../../components/TodoPanel';
 import {
   createBookmark,
   createFolder,
   moveBookmark,
+  moveFolder,
   openUrl,
   removeBookmark,
+  removeFolder,
+  renameFolder,
   subscribeBookmarkChanges,
   updateBookmark,
 } from '../../services/chromeApi';
-import { useTodos } from '../../hooks/useTodos';
+import {
+  clearGroupHue,
+  loadGroupHues,
+  setGroupHue,
+  subscribeGroupHues,
+} from '../../services/groupHues';
 import { copy } from '../../i18n';
+import { folderHue } from './folderHue';
 import { GraphCanvas } from './GraphCanvas';
 import {
   addEdge as addEdgeFn,
@@ -44,7 +54,10 @@ export function Graph({ data }: Props) {
   const [editing, setEditing] = useState<Bookmark | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderName, setFolderName] = useState('');
-  const [todosOpen, setTodosOpen] = useState(false);
+  const [folderHueDraft, setFolderHueDraft] = useState<number>(200);
+  const [groupsOpen, setGroupsOpen] = useState(false);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [groupHues, setGroupHues] = useState<Record<string, number>>({});
   const [bmMenu, setBmMenu] = useState<{
     x: number;
     y: number;
@@ -54,7 +67,20 @@ export function Graph({ data }: Props) {
   const [edgeMenu, setEdgeMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [canvasMenu, setCanvasMenu] = useState<{ x: number; y: number } | null>(null);
   const filterRef = useRef<HTMLInputElement>(null);
-  const { todos, toggle, add, remove } = useTodos();
+
+  useEffect(() => {
+    let cancelled = false;
+    loadGroupHues().then((m) => {
+      if (!cancelled) setGroupHues(m);
+    });
+    const unsub = subscribeGroupHues((m) => {
+      if (!cancelled) setGroupHues({ ...m });
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +120,13 @@ export function Graph({ data }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.bookmarks]);
 
+  // Clear active group if it stops existing (e.g. was renamed/deleted).
+  useEffect(() => {
+    if (activeGroupId && !data.groups.some((g) => g.id === activeGroupId)) {
+      setActiveGroupId(null);
+    }
+  }, [data.groups, activeGroupId]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (document.activeElement as HTMLElement | null)?.tagName;
@@ -106,7 +139,7 @@ export function Graph({ data }: Props) {
         if (bmMenu) setBmMenu(null);
         else if (edgeMenu) setEdgeMenu(null);
         else if (canvasMenu) setCanvasMenu(null);
-        else if (todosOpen) setTodosOpen(false);
+        else if (groupsOpen) setGroupsOpen(false);
         else if (typing) {
           (document.activeElement as HTMLElement).blur();
           setFilter('');
@@ -115,7 +148,7 @@ export function Graph({ data }: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [bmMenu, edgeMenu, canvasMenu, todosOpen]);
+  }, [bmMenu, edgeMenu, canvasMenu, groupsOpen]);
 
   const onRequestEdge = (fromId: string, toId: string) => {
     const next = addEdgeFn(edges, fromId, toId);
@@ -173,7 +206,11 @@ export function Graph({ data }: Props) {
       {
         label: '+ ' + copy.workspace.newFolder,
         disabled: !data.barId,
-        onClick: () => setCreatingFolder(true),
+        onClick: openNewFolder,
+      },
+      {
+        label: '分组管理…',
+        onClick: () => setGroupsOpen(true),
       },
     ];
   };
@@ -181,60 +218,60 @@ export function Graph({ data }: Props) {
   const submitFolder = async () => {
     const name = folderName.trim();
     if (!name || !data.barId) return;
-    await createFolder(data.barId, name);
+    const newId = await createFolder(data.barId, name);
+    // If the user picked a hue different from the default hash hue, persist it.
+    if (newId && Math.round(folderHueDraft) !== folderHue(newId)) {
+      await setGroupHue(newId, folderHueDraft);
+    }
     setFolderName('');
+    setFolderHueDraft(200);
     setCreatingFolder(false);
   };
 
-  const openCount = todos.filter((t) => !t.done).length;
+  const openNewFolder = () => {
+    // Pre-pick a pleasant hue that isn't already used by an existing folder.
+    const used = new Set(
+      data.groups.map((g) => Math.round(groupHues[g.id] ?? folderHue(g.id)))
+    );
+    const options = [200, 330, 150, 55, 290, 95, 15, 250];
+    const pick = options.find((h) => !used.has(h)) ?? 200;
+    setFolderHueDraft(pick);
+    setCreatingFolder(true);
+  };
+
+  const filterQuery = filter.trim().toLowerCase();
+  const filterMatches = filterQuery
+    ? data.bookmarks.filter((b) =>
+        (b.name + ' ' + b.url + ' ' + b.group).toLowerCase().includes(filterQuery)
+      )
+    : [];
+  const topMatch = filterQuery
+    ? [...filterMatches].sort((a, b) => b.visits - a.visits)[0]
+    : null;
+  // Exact match = query equals a bookmark name (trimmed, case-insensitive).
+  // When present we trigger a Hitchcock-style focus zoom on that node.
+  const exactMatch = filterQuery
+    ? data.bookmarks.find((b) => b.name.trim().toLowerCase() === filterQuery) ?? null
+    : null;
+
+  const onFilterKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && topMatch) {
+      e.preventDefault();
+      openUrl(topMatch.url);
+    }
+  };
 
   return (
     <div style={styles.root}>
-      <div style={styles.topBar}>
-        <div style={styles.filter}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--fg-3)" strokeWidth="2">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m21 21-4.3-4.3" />
-          </svg>
-          <input
-            ref={filterRef}
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder={copy.constellation.filterPlaceholder}
-            style={styles.filterInput}
-          />
-          <span className="kbd">/</span>
-        </div>
-        <div style={styles.actions}>
-          <button onClick={() => setAdding(true)} style={styles.actionBtn}>
-            ＋ {copy.workspace.addBookmark}
-          </button>
-          <button
-            onClick={() => setCreatingFolder(true)}
-            disabled={!data.barId}
-            style={{ ...styles.actionBtn, opacity: data.barId ? 1 : 0.5 }}
-          >
-            ＋ {copy.workspace.newFolder}
-          </button>
-          <button
-            onClick={() => setTodosOpen((v) => !v)}
-            style={{
-              ...styles.actionBtn,
-              ...(todosOpen ? { background: 'var(--accent-soft)', color: 'var(--fg)' } : {}),
-            }}
-          >
-            {copy.workspace.todayLabel}
-            {openCount > 0 && <span style={styles.badge}>{openCount}</span>}
-          </button>
-        </div>
-      </div>
-
       <GraphCanvas
         bookmarks={data.bookmarks}
         groups={data.groups as Group[]}
         edges={edges}
         pins={pins}
         filterText={filter}
+        focusBookmarkId={exactMatch?.id ?? null}
+        highlightGroupId={activeGroupId}
+        hueOverrides={groupHues}
         onRequestEdge={onRequestEdge}
         onOpenBookmark={(id) => {
           const bm = data.bookmarks.find((b) => b.id === id);
@@ -245,15 +282,71 @@ export function Graph({ data }: Props) {
         onCanvasMenu={(x, y) => setCanvasMenu({ x, y })}
       />
 
+      {/* Floating toolbar — overlays the canvas instead of carving out a bar. */}
+      <div style={styles.toolbar}>
+        <div style={styles.searchPill}>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--fg-3)"
+            strokeWidth="2"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            ref={filterRef}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={onFilterKeyDown}
+            placeholder={copy.constellation.filterPlaceholder}
+            style={styles.searchInput}
+          />
+          {filterQuery ? (
+            <span
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: filterMatches.length > 0 ? 'var(--fg-2)' : 'var(--warn)',
+                whiteSpace: 'nowrap',
+              }}
+              title={topMatch ? `回车打开：${topMatch.name}` : '没有匹配的书签'}
+            >
+              {filterMatches.length > 0
+                ? `${filterMatches.length} · ↵`
+                : '无结果'}
+            </span>
+          ) : (
+            <span className="kbd">/</span>
+          )}
+        </div>
+
+        <div style={styles.toolbarDivider} />
+
+        <ToolButton title={copy.workspace.addBookmark} onClick={() => setAdding(true)}>
+          <PlusIcon />
+        </ToolButton>
+        <ToolButton
+          title="分组管理"
+          active={groupsOpen}
+          onClick={() => setGroupsOpen((v) => !v)}
+        >
+          <FolderIcon />
+        </ToolButton>
+      </div>
+
+      {/* Floating bottom strip — also overlays, so canvas runs full bleed. */}
       <div style={styles.bottomStrip}>
         <div style={styles.stripSection}>
           <div className="mono" style={styles.stripLabel}>
             {copy.constellation.stripTop}
           </div>
-          <div style={styles.stripRow}>
+          <div className="strip-row" style={styles.stripRow}>
             {[...data.bookmarks]
               .sort((a, b) => b.visits - a.visits)
-              .slice(0, 5)
+              .slice(0, 8)
               .map((b) => (
                 <button
                   key={b.id}
@@ -276,8 +369,8 @@ export function Graph({ data }: Props) {
           <div className="mono" style={styles.stripLabel}>
             {copy.constellation.stripRecent}
           </div>
-          <div style={styles.stripRow}>
-            {data.recents.slice(0, 4).map((r, i) => (
+          <div className="strip-row" style={styles.stripRow}>
+            {data.recents.slice(0, 8).map((r, i) => (
               <button
                 key={i}
                 style={styles.stripChip}
@@ -366,7 +459,7 @@ export function Graph({ data }: Props) {
           setFolderName('');
         }}
         title={copy.workspace.newFolder}
-        width={360}
+        width={380}
       >
         <input
           autoFocus
@@ -378,7 +471,23 @@ export function Graph({ data }: Props) {
           placeholder={copy.workspace.newFolderPlaceholder}
           style={styles.folderInput}
         />
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <div style={{ marginTop: 12, marginBottom: 4 }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: 'var(--fg-3)',
+              marginBottom: 8,
+              letterSpacing: '0.06em',
+            }}
+          >
+            分组颜色
+          </div>
+          <HuePalette
+            value={folderHueDraft}
+            onChange={setFolderHueDraft}
+          />
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
           <button
             onClick={() => {
               setCreatingFolder(false);
@@ -398,101 +507,205 @@ export function Graph({ data }: Props) {
         </div>
       </Modal>
 
-      {todosOpen && (
-        <div style={styles.todosPanel}>
-          <div style={styles.todosHead}>
-            <span style={{ fontSize: 13, fontWeight: 500 }}>{copy.workspace.todayLabel}</span>
+      {groupsOpen && (
+        <div style={styles.sidePanel}>
+          <div style={styles.panelHead}>
+            <span style={{ fontSize: 13, fontWeight: 500 }}>分组管理</span>
             <span className="mono" style={{ fontSize: 11, color: 'var(--fg-3)' }}>
-              {copy.workspace.todayOpen(openCount)}
+              {data.groups.length} 个分组
             </span>
-            <button onClick={() => setTodosOpen(false)} style={styles.todosClose} aria-label="关闭">
+            <button
+              onClick={() => setGroupsOpen(false)}
+              style={styles.panelClose}
+              aria-label="关闭"
+            >
               ×
             </button>
           </div>
-          <TodoPanel todos={todos} onToggle={toggle} onAdd={add} onRemove={remove} />
+          <GroupsPanel
+            groups={data.groups}
+            bookmarks={data.bookmarks}
+            protectedId={data.barId}
+            activeId={activeGroupId}
+            hueOverrides={groupHues}
+            onActiveChange={setActiveGroupId}
+            onRename={(id, next) => void renameFolder(id, next)}
+            onDelete={(id) => void removeFolder(id)}
+            onCreate={openNewFolder}
+            onChangeHue={(id, hue) => void setGroupHue(id, hue)}
+            onResetHue={(id) => void clearGroupHue(id)}
+            onMove={(id, dest) => void moveFolder(id, dest)}
+          />
         </div>
       )}
     </div>
   );
 }
 
+interface ToolButtonProps {
+  title: string;
+  active?: boolean;
+  badge?: number;
+  onClick: () => void;
+  children: ReactNode;
+}
+
+function ToolButton({ title, active, badge, onClick, children }: ToolButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      style={{
+        ...styles.toolBtn,
+        ...(active ? styles.toolBtnActive : {}),
+      }}
+    >
+      {children}
+      {badge != null && <span style={styles.toolBadge}>{badge}</span>}
+    </button>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+    </svg>
+  );
+}
+
+const FLOAT_BG = 'color-mix(in oklch, var(--bg-1) 72%, transparent)';
+
 const styles: Record<string, CSSProperties> = {
   root: {
     flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100vh',
-    padding: '14px 20px 14px',
-    gap: 10,
     position: 'relative',
-    overflow: 'hidden',
-  },
-  topBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    flexShrink: 0,
-    maxWidth: 960,
+    height: '100vh',
     width: '100%',
-    margin: '0 auto',
+    overflow: 'hidden',
+    display: 'flex',
   },
-  filter: {
+  toolbar: {
+    position: 'absolute',
+    top: 14,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 30,
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
-    padding: '10px 14px',
-    background: 'var(--bg-1)',
+    gap: 4,
+    padding: '4px 6px',
+    background: FLOAT_BG,
+    backdropFilter: 'blur(14px) saturate(160%)',
+    WebkitBackdropFilter: 'blur(14px) saturate(160%)',
     border: '1px solid var(--line)',
-    borderRadius: 10,
-    flex: 1,
-    minWidth: 0,
-    boxShadow: 'var(--shadow-sm)',
+    borderRadius: 14,
+    boxShadow: 'var(--shadow-md)',
+    maxWidth: 'calc(100vw - 40px)',
   },
-  filterInput: {
+  searchPill: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '7px 12px',
+    borderRadius: 10,
+    minWidth: 220,
+    flex: '0 1 320px',
+  },
+  searchInput: {
     flex: 1,
     minWidth: 0,
     background: 'transparent',
     border: 0,
     outline: 'none',
-    fontSize: 14,
+    fontSize: 13.5,
     color: 'var(--fg)',
   },
-  actions: { display: 'flex', gap: 6, flexShrink: 0 },
-  actionBtn: {
+  toolbarDivider: {
+    width: 1,
+    height: 20,
+    background: 'var(--line-soft)',
+    margin: '0 4px',
+  },
+  toolBtn: {
+    position: 'relative',
+    width: 32,
+    height: 32,
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 6,
-    padding: '8px 12px',
-    background: 'var(--bg-1)',
-    border: '1px solid var(--line)',
-    borderRadius: 10,
+    justifyContent: 'center',
+    border: '1px solid transparent',
+    borderRadius: 8,
+    background: 'transparent',
     color: 'var(--fg-2)',
-    fontSize: 12.5,
-    boxShadow: 'var(--shadow-sm)',
     cursor: 'pointer',
   },
-  badge: {
-    padding: '1px 6px',
-    fontSize: 10,
+  toolBtnActive: {
+    background: 'var(--accent-soft)',
+    border: '1px solid var(--accent)',
+    color: 'var(--fg)',
+  },
+  toolBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    padding: '0 4px',
+    fontSize: 9.5,
     fontFamily: 'var(--font-mono)',
     background: 'var(--accent)',
     color: 'var(--accent-ink)',
     borderRadius: 999,
-    lineHeight: 1.4,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    lineHeight: 1,
   },
   bottomStrip: {
+    position: 'absolute',
+    bottom: 14,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 20,
     display: 'flex',
     alignItems: 'stretch',
     gap: 14,
     padding: '8px 12px',
-    background: 'var(--bg-1)',
+    background: FLOAT_BG,
+    backdropFilter: 'blur(14px) saturate(160%)',
+    WebkitBackdropFilter: 'blur(14px) saturate(160%)',
     border: '1px solid var(--line-soft)',
-    borderRadius: 10,
-    flexShrink: 0,
+    borderRadius: 12,
+    boxShadow: 'var(--shadow-sm)',
+    maxWidth: 'calc(100vw - 40px)',
   },
   stripSection: { display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 },
-  stripLabel: { fontSize: 10, letterSpacing: '0.15em', color: 'var(--fg-3)' },
-  stripRow: { display: 'flex', gap: 6, overflow: 'hidden', flex: 1 },
+  stripLabel: { fontSize: 10, letterSpacing: '0.15em', color: 'var(--fg-3)', flexShrink: 0 },
+  stripRow: {
+    display: 'flex',
+    gap: 6,
+    overflowX: 'auto',
+    overflowY: 'hidden',
+    flex: 1,
+    minWidth: 0,
+    // Subtle fade on the right edge so chips visibly "run under" the strip.
+    maskImage:
+      'linear-gradient(to right, black, black calc(100% - 16px), transparent)',
+    WebkitMaskImage:
+      'linear-gradient(to right, black, black calc(100% - 16px), transparent)',
+    scrollbarWidth: 'none',
+  },
   stripChip: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -539,12 +752,12 @@ const styles: Record<string, CSSProperties> = {
     background: 'var(--bg-2)',
     cursor: 'not-allowed',
   },
-  todosPanel: {
+  sidePanel: {
     position: 'fixed',
-    top: 80,
+    top: 72,
     right: 20,
     width: 320,
-    maxHeight: '70vh',
+    maxHeight: 'calc(100vh - 120px)',
     overflowY: 'auto',
     zIndex: 120,
     padding: 14,
@@ -553,8 +766,8 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 12,
     boxShadow: 'var(--shadow-lg)',
   },
-  todosHead: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 },
-  todosClose: {
+  panelHead: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 },
+  panelClose: {
     marginLeft: 'auto',
     width: 22,
     height: 22,

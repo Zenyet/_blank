@@ -17,6 +17,9 @@ interface Params {
   groups: Group[];
   edges: GraphEdge[];
   pins: PinsMap;
+  /** User-set hue overrides keyed by folder id. Unset folders fall back to
+   *  the deterministic hash hue. */
+  hueOverrides?: Record<string, number>;
 }
 
 export interface GraphSim {
@@ -45,10 +48,30 @@ function radiusFor(visits: number): number {
  * Build / rebuild the d3-force simulation whenever the underlying inputs change.
  * Node identity is preserved across rebuilds so that positions survive.
  */
-export function useGraphSim({ bookmarks, groups, edges, pins }: Params): GraphSim {
+export function useGraphSim({
+  bookmarks,
+  groups,
+  edges,
+  pins,
+  hueOverrides,
+}: Params): GraphSim {
   const nodesRef = useRef<GraphNode[]>([]);
   const simulationRef = useRef<Simulation<GraphNode, LinkDatum> | null>(null);
   const draggingRef = useRef<string | null>(null);
+  // Latest hue overrides — read at rebuild time without being a dep. Keeps
+  // the expensive d3-force rebuild decoupled from live slider drags; hue
+  // changes are instead applied in-place in a separate tiny effect below.
+  const hueOverridesRef = useRef(hueOverrides);
+
+  useEffect(() => {
+    hueOverridesRef.current = hueOverrides;
+    // Mutate existing node objects in place so the renderer picks up new
+    // colors on its next rAF tick, without disturbing node positions or
+    // velocity.
+    for (const n of nodesRef.current) {
+      n.groupHue = hueOverrides?.[n.parentId] ?? folderHue(n.parentId);
+    }
+  }, [hueOverrides]);
 
   useEffect(() => {
     // Preserve positions of existing nodes when rebuilding.
@@ -71,7 +94,7 @@ export function useGraphSim({ bookmarks, groups, edges, pins }: Params): GraphSi
         fx: pin?.x ?? null,
         fy: pin?.y ?? null,
         radius: radiusFor(b.visits),
-        groupHue: folderHue(b.parentId),
+        groupHue: hueOverridesRef.current?.[b.parentId] ?? folderHue(b.parentId),
       };
     });
 
@@ -127,7 +150,14 @@ export function useGraphSim({ bookmarks, groups, edges, pins }: Params): GraphSi
     draggingRef.current = id;
     node.fx = wx;
     node.fy = wy;
-    reheat(0.3);
+    // Pin alphaTarget above the tick threshold so the simulation never cools
+    // to zero while the user is dragging (otherwise dragTo would stop
+    // materialising fx/fy after ~3-4s when alpha decays past 0.003).
+    const sim = simulationRef.current;
+    if (sim) {
+      sim.alphaTarget(0.3);
+      if (sim.alpha() < 0.3) sim.alpha(0.3);
+    }
   };
 
   const dragTo = (wx: number, wy: number) => {
@@ -150,7 +180,9 @@ export function useGraphSim({ bookmarks, groups, edges, pins }: Params): GraphSi
       node.fx = null;
       node.fy = null;
     }
-    reheat(0.15);
+    // Release the alphaTarget so the simulation can settle back to rest.
+    const sim = simulationRef.current;
+    if (sim) sim.alphaTarget(0);
     return pos;
   };
 

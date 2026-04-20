@@ -123,6 +123,12 @@ export const copy = {
     density: '密度',
     densities: { cozy: '宽松', compact: '紧凑' },
     bg: '背景',
-    bgs: { flat: '纯色', grain: '颗粒', grid: '网格' },
+    bgs: { flat: '纯色', grain: '颗粒', grid: '网格', image: '图片' },
+    bgImageTitle: '自定义背景图',
+    bgImageUpload: '上传图片',
+    bgImageUrl: '或填入图片链接',
+    bgImageDim: '遮罩强度',
+    bgImageRemove: '移除图片',
+    bgImageTooLarge: '图片太大，请换一张（上限约 3MB）',
   },
 };

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { DEFAULT_SETTINGS, type Settings } from '../types';
 import { loadSettings, saveSettings } from '../services/chromeApi';
+import { backgroundImageCssValue } from '../data/backgrounds';
 
 export function useSettings(): {
   settings: Settings;
@@ -43,6 +44,23 @@ export function useSettings(): {
       '--accent-ink',
       `oklch(0.22 0.05 ${settings.accentHue})`
     );
+    // Custom background image: applied as a layered CSS variable which the
+    // `[data-bg="image"]` selector in tokens.css paints. The stored value
+    // can be a URL/data URL or a gradient string; the normaliser returns
+    // a CSS `background-image` expression either way.
+    if (settings.bg === 'image' && settings.bgImage) {
+      document.documentElement.style.setProperty(
+        '--bg-image',
+        backgroundImageCssValue(settings.bgImage)
+      );
+      document.documentElement.style.setProperty(
+        '--bg-image-dim',
+        String(settings.bgImageDim)
+      );
+    } else {
+      document.documentElement.style.removeProperty('--bg-image');
+      document.documentElement.style.removeProperty('--bg-image-dim');
+    }
   }, [settings, ready]);
 
   return { settings, update, ready };

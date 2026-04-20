@@ -1,5 +1,6 @@
 import type { Camera, GraphEdge, GraphNode } from '../../types';
 import { FaviconCache } from './faviconCache';
+import { convexHull, inflateHull, pathSmoothBlob } from './hull';
 
 export interface RenderState {
   nodes: GraphNode[];
@@ -13,6 +14,8 @@ export interface RenderState {
   /** Source node + live cursor position while shift-drag is building an edge. */
   ghost: { fromX: number; fromY: number; toX: number; toY: number } | null;
   favicons: FaviconCache;
+  /** When set, draw a soft hull behind all nodes whose parentId equals this. */
+  highlightGroupId: string | null;
 }
 
 export interface Theme {
@@ -58,10 +61,68 @@ export function drawGraph(
   ctx.clearRect(0, 0, size.width * size.dpr, size.height * size.dpr);
   applyCamera(ctx, camera, size.width, size.height, size.dpr);
 
+  // Group highlight sits behind everything so nodes + edges remain readable.
+  if (state.highlightGroupId) drawGroupHighlight(ctx, state);
   drawEdges(ctx, state);
   if (state.ghost) drawGhost(ctx, state.ghost, theme);
   drawNodes(ctx, state, theme);
   drawLabels(ctx, state, theme);
+}
+
+/**
+ * Soft, translucent "blob" behind the nodes of a group — makes the group's
+ * spatial extent obvious while editing it in the Groups panel.
+ */
+function drawGroupHighlight(ctx: CanvasRenderingContext2D, state: RenderState): void {
+  const id = state.highlightGroupId!;
+  const members = state.nodes.filter((n) => n.parentId === id);
+  if (members.length === 0) return;
+
+  const hue = members[0]!.groupHue;
+  const padding = 36 + (members[0]!.radius ?? 14);
+
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  if (members.length === 1) {
+    // Single node: draw a halo circle around it.
+    const n = members[0]!;
+    const r = n.radius + padding;
+    ctx.fillStyle = hueString(hue, 75, 0.14) + '';
+    ctx.globalAlpha = 0.22;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = hueString(hue, 82, 0.18);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  const hull = convexHull(members.map((n) => ({ x: n.x, y: n.y })));
+  const inflated = inflateHull(hull, padding);
+
+  // Fill.
+  ctx.beginPath();
+  pathSmoothBlob(ctx, inflated);
+  ctx.closePath();
+  ctx.fillStyle = hueString(hue, 75, 0.14);
+  ctx.globalAlpha = 0.22;
+  ctx.fill();
+
+  // Soft stroke.
+  ctx.beginPath();
+  pathSmoothBlob(ctx, inflated);
+  ctx.closePath();
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = hueString(hue, 82, 0.2);
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 function alphaFor(nodeId: string, filter: Set<string> | null): number {

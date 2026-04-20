@@ -1,4 +1,4 @@
-import type { Bookmark } from '../types';
+import type { Bookmark, Group } from '../types';
 
 // Fallback mock data — mirrors design/data.js.
 // Used when Chrome extension APIs are unavailable (e.g. `vite dev` in a normal browser)
@@ -36,11 +36,11 @@ export const FALLBACK_BOOKMARKS: Bookmark[] = [
   mk('rc', 'tools', 'Raycast', 'https://raycast.com', '工具', '#ff6363', 'Rc', 44, '2d'),
 ];
 
-export const FALLBACK_GROUPS = [
-  { id: 'work', label: '工作' },
-  { id: 'media', label: '娱乐' },
-  { id: 'read', label: '阅读' },
-  { id: 'tools', label: '工具' },
+export const FALLBACK_GROUPS: Group[] = [
+  { id: 'work', label: '工作', parentGroupId: null, depth: 0 },
+  { id: 'media', label: '娱乐', parentGroupId: null, depth: 0 },
+  { id: 'read', label: '阅读', parentGroupId: null, depth: 0 },
+  { id: 'tools', label: '工具', parentGroupId: null, depth: 0 },
 ];
 
 export const FALLBACK_RECENTS = [
