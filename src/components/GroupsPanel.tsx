@@ -1,9 +1,11 @@
 import type { CSSProperties, DragEvent } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Bookmark, Group } from '../types';
 import { folderHue } from '../designs/Graph/folderHue';
 import { HuePickerButton } from './ColorPicker';
 import { InlineEdit } from './InlineEdit';
+import { ConfirmDialog } from './ConfirmDialog';
+import './GroupsPanel.css';
 
 interface Props {
   groups: Group[];
@@ -12,16 +14,20 @@ interface Props {
    *  cannot be renamed or deleted. Also used as the target parentId when
    *  a group is dropped at the top level. */
   protectedId: string | null;
-  /** Id of the group currently being hovered/edited in the panel; used to
-   *  drive the canvas highlight. */
-  activeId: string | null;
   /** User-picked hue overrides; any group missing from the map uses its
    *  auto-assigned hash hue. */
   hueOverrides: Record<string, number>;
+  /** Current group focus id. Unlike hover/pin preview, this dims the graph to
+   *  the group's subtree and persists when the panel is folded. */
+  focusedId: string | null;
+  /** Whenever the effective "active group" changes (hover or pin), this is
+   *  fired so the canvas can highlight the corresponding hull. Hover takes
+   *  priority over pin so the user can still explore other groups while
+   *  keeping a pinned anchor as fallback. */
   onActiveChange: (id: string | null) => void;
+  onFocusChange: (id: string | null) => void;
   onRename: (id: string, next: string) => void;
   onDelete: (id: string) => void;
-  onCreate: () => void;
   onChangeHue: (id: string, hue: number) => void;
   onResetHue: (id: string) => void;
   /** Move a group to `dest` using chrome.bookmarks.move semantics:
@@ -30,15 +36,29 @@ interface Props {
    *    - `index`: 0-based insertion position within the destination
    *      siblings, already adjusted for remove-then-insert behaviour. */
   onMove: (id: string, dest: { parentId: string; index: number }) => void;
+
+  /** Inline-create state, lifted so canvas right-click can also trigger it. */
+  creating: boolean;
+  onCreatingChange: (next: boolean) => void;
+  onCommitCreate: (name: string) => Promise<void> | void;
+  /** Auto-picked hue for the new-group swatch — kept in sync by the parent
+   *  so it stays distinct from existing groups even if hues change. */
+  nextHue: number;
 }
 
 type DropZone = 'before' | 'inside' | 'after';
 
 /**
- * Inline list of bookmark folders ("groups"). Hovering a row previews the
- * group on the canvas via onActiveChange; pencil icon enters inline rename,
- * trash icon deletes (with a confirm for non-empty groups). Protected
- * entries (the virtual bookmarks-bar root) skip the action buttons.
+ * Inline list of bookmark folders ("groups"). Two-level active state:
+ *  - hover any row → preview that group on canvas
+ *  - click row label → "pin" it; preview persists when the cursor leaves
+ *  - click the pinned row again → unpin
+ * Hover always wins for transient previews, with pin as the fallback.
+ *
+ * Action buttons (rename / delete) are hidden until row hover/focus so the
+ * idle list reads quietly. Delete uses an in-app ConfirmDialog instead of
+ * the native `window.confirm`. New-group flow is fully inline; a row at
+ * the bottom turns into an editable input on demand.
  *
  * Rows are drag-handle reorderable — grip on the left initiates a native
  * HTML5 drag, a colored bar indicates the drop point. Protected rows can
@@ -48,15 +68,19 @@ export function GroupsPanel({
   groups,
   bookmarks,
   protectedId,
-  activeId,
   hueOverrides,
+  focusedId,
   onActiveChange,
+  onFocusChange,
   onRename,
   onDelete,
-  onCreate,
   onChangeHue,
   onResetHue,
   onMove,
+  creating,
+  onCreatingChange,
+  onCommitCreate,
+  nextHue,
 }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -64,8 +88,34 @@ export function GroupsPanel({
     id: string;
     zone: DropZone;
   } | null>(null);
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Group | null>(null);
+  const [inlineName, setInlineName] = useState('');
 
-  const countFor = (id: string) => bookmarks.filter((b) => b.parentId === id).length;
+  // Effective active = hover wins for previews, pin acts as the fallback.
+  const effectiveActive = hoveredId ?? pinnedId;
+  useEffect(() => {
+    onActiveChange(effectiveActive);
+  }, [effectiveActive, onActiveChange]);
+
+  useEffect(() => {
+    return () => onActiveChange(null);
+  }, [onActiveChange]);
+
+  // Drop pin if the pinned group disappears (renamed/deleted by an
+  // out-of-band edit, e.g. via the Chrome bookmarks UI).
+  useEffect(() => {
+    if (pinnedId && !groups.some((g) => g.id === pinnedId)) setPinnedId(null);
+  }, [groups, pinnedId]);
+
+  // Reset the inline name field whenever the create flow toggles off.
+  useEffect(() => {
+    if (!creating) setInlineName('');
+  }, [creating]);
+
+  const countFor = (id: string) =>
+    bookmarks.filter((b) => b.parentId === id).length;
 
   /** Siblings in declaration order, used for index math on reorder drops. */
   const siblingsOf = (parentId: string | null): Group[] =>
@@ -85,18 +135,24 @@ export function GroupsPanel({
     return false;
   };
 
-  const confirmDelete = (g: Group) => {
+  const requestDelete = (g: Group) => {
+    setPendingDelete(g);
+  };
+
+  const confirmDeleteMessage = (g: Group) => {
     const n = countFor(g.id);
     const childFolders = groups.filter((x) => x.parentGroupId === g.id).length;
-    let msg: string;
     if (childFolders > 0) {
-      msg = `"${g.label}"包含 ${childFolders} 个子分组和 ${n} 个书签，删除后会一并移除，是否继续？`;
-    } else if (n === 0) {
-      msg = `确认删除分组"${g.label}"？`;
-    } else {
-      msg = `"${g.label}"包含 ${n} 个书签，删除后会一同移除，是否继续？`;
+      return `“${g.label}”包含 ${childFolders} 个子分组和 ${n} 个书签，删除后会一并移除。`;
     }
-    if (window.confirm(msg)) onDelete(g.id);
+    if (n === 0) {
+      return `确认删除分组“${g.label}”？`;
+    }
+    return `“${g.label}”包含 ${n} 个书签，删除后会一同移除。`;
+  };
+
+  const togglePin = (id: string) => {
+    setPinnedId((prev) => (prev === id ? null : id));
   };
 
   const onRowDragStart = (e: DragEvent<HTMLDivElement>, g: Group) => {
@@ -185,43 +241,66 @@ export function GroupsPanel({
     setDropTarget(null);
   };
 
+  const submitInline = async () => {
+    const name = inlineName.trim();
+    if (!name) return;
+    await onCommitCreate(name);
+    // Parent toggles `creating` off; the useEffect clears `inlineName`.
+  };
+
   return (
     <div>
       {groups.map((g) => {
         const isProtected = g.id === protectedId;
-        const isActive = g.id === activeId;
+        const isHovered = g.id === hoveredId;
+        const isPinned = g.id === pinnedId;
+        const isFocused = g.id === focusedId;
+        const isActiveRow = isHovered || isPinned || isFocused;
         const isEditing = g.id === editingId;
         const isDragging = g.id === dragId;
         const hasOverride = g.id in hueOverrides;
         const hue = hueOverrides[g.id] ?? folderHue(g.id);
         const indicator = dropTarget?.id === g.id ? dropTarget.zone : null;
+        const dataState = isFocused
+          ? 'focused'
+          : isPinned
+            ? 'pinned'
+            : isHovered
+              ? 'hover'
+              : 'idle';
         return (
           <div
             key={g.id}
+            className="groups-row"
+            data-state={dataState}
+            data-depth={g.depth}
             draggable={!isProtected && !isEditing}
             onDragStart={(e) => onRowDragStart(e, g)}
             onDragOver={(e) => onRowDragOver(e, g)}
             onDrop={(e) => onRowDrop(e, g)}
             onDragEnd={resetDrag}
-            onMouseEnter={() => onActiveChange(g.id)}
-            onMouseLeave={() => onActiveChange(null)}
+            onMouseEnter={() => setHoveredId(g.id)}
+            onMouseLeave={() => setHoveredId(null)}
             style={{
-              ...s.row,
               // Indent nested folders so the tree is legible. 14px per level
               // matches the grip icon width.
               paddingLeft: 8 + g.depth * 14,
               background:
                 indicator === 'inside'
                   ? `oklch(0.62 0.15 ${hue} / 0.18)`
-                  : isActive
+                  : isActiveRow
                     ? 'var(--bg-2)'
                     : 'transparent',
               borderColor:
                 indicator === 'inside'
                   ? `oklch(0.62 0.15 ${hue} / 0.6)`
-                  : isActive
-                    ? `oklch(0.62 0.15 ${hue} / 0.45)`
-                    : 'transparent',
+                  : isFocused
+                    ? `oklch(0.62 0.15 ${hue} / 0.62)`
+                  : isPinned
+                    ? `oklch(0.62 0.15 ${hue} / 0.55)`
+                    : isHovered
+                      ? `oklch(0.62 0.15 ${hue} / 0.32)`
+                      : 'transparent',
               opacity: isDragging ? 0.4 : 1,
               boxShadow:
                 indicator === 'before'
@@ -258,9 +337,17 @@ export function GroupsPanel({
               />
             ) : (
               <span
-                style={s.label}
+                className="groups-row__label"
+                onClick={() => !isProtected && togglePin(g.id)}
                 onDoubleClick={() => !isProtected && setEditingId(g.id)}
-                title={isProtected ? '书签栏根分组不可编辑' : '双击重命名'}
+                style={isProtected ? { cursor: 'default' } : undefined}
+                title={
+                  isProtected
+                    ? '书签栏根分组不可编辑'
+                    : isPinned
+                      ? '点击取消固定（双击重命名）'
+                      : '点击固定预览（双击重命名）'
+                }
               >
                 {g.label}
               </span>
@@ -268,34 +355,106 @@ export function GroupsPanel({
             <span className="mono" style={s.count}>
               {countFor(g.id)}
             </span>
-            {!isProtected && !isEditing && (
-              <>
+            {!isEditing && (
+              <span className="groups-row__actions">
                 <button
                   type="button"
-                  onClick={() => setEditingId(g.id)}
-                  style={s.iconBtn}
-                  title="重命名"
-                  aria-label="重命名"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFocusChange(isFocused ? null : g.id);
+                  }}
+                  className="groups-row__icon-btn groups-row__icon-btn--focus"
+                  title={isFocused ? '退出分组聚焦' : '聚焦分组'}
+                  aria-label={isFocused ? '退出分组聚焦' : '聚焦分组'}
+                  aria-pressed={isFocused}
                 >
-                  <PencilIcon />
+                  <FocusIcon />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => confirmDelete(g)}
-                  style={{ ...s.iconBtn, color: 'var(--warn)' }}
-                  title="删除分组"
-                  aria-label="删除分组"
-                >
-                  <TrashIcon />
-                </button>
-              </>
+                {!isProtected && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setEditingId(g.id)}
+                      className="groups-row__icon-btn"
+                      title="重命名"
+                      aria-label="重命名"
+                    >
+                      <PencilIcon />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => requestDelete(g)}
+                      className="groups-row__icon-btn groups-row__icon-btn--danger"
+                      title="删除分组"
+                      aria-label="删除分组"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </>
+                )}
+              </span>
             )}
           </div>
         );
       })}
-      <button type="button" onClick={onCreate} style={s.newBtn}>
-        ＋ 新建分组
-      </button>
+
+      {creating ? (
+        <div
+          className="groups-row groups-row--creating"
+          data-depth="0"
+          style={{ paddingLeft: 8 }}
+        >
+          <span style={s.gripSpacer} aria-hidden />
+          <span
+            className="groups-row__hue-swatch"
+            style={{ background: `oklch(0.62 0.15 ${nextHue})` }}
+            aria-hidden
+            title="新分组的预选配色，创建后可在行内修改"
+          />
+          <input
+            autoFocus
+            className="groups-row__create-input"
+            value={inlineName}
+            onChange={(e) => setInlineName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void submitInline();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                onCreatingChange(false);
+              }
+            }}
+            onBlur={() => {
+              if (!inlineName.trim()) onCreatingChange(false);
+            }}
+            placeholder="分组名称，回车创建"
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="groups-new-btn"
+          onClick={() => onCreatingChange(true)}
+          disabled={!protectedId}
+          title={!protectedId ? '没有可用的书签栏根，无法创建' : ''}
+        >
+          ＋ 新建分组
+        </button>
+      )}
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="删除分组"
+        message={pendingDelete ? confirmDeleteMessage(pendingDelete) : ''}
+        danger
+        confirmLabel="删除"
+        onConfirm={() => {
+          if (pendingDelete) onDelete(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }
@@ -309,6 +468,25 @@ function GripIcon() {
       <circle cx="8" cy="7" r="1.2" />
       <circle cx="2" cy="11" r="1.2" />
       <circle cx="8" cy="11" r="1.2" />
+    </svg>
+  );
+}
+
+function FocusIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="6" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
     </svg>
   );
 }
@@ -333,15 +511,6 @@ function TrashIcon() {
 }
 
 const s: Record<string, CSSProperties> = {
-  row: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '6px 8px',
-    borderRadius: 8,
-    border: '1px solid transparent',
-    transition: 'background 120ms ease, border-color 120ms ease, opacity 120ms ease',
-  },
   grip: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -356,15 +525,6 @@ const s: Record<string, CSSProperties> = {
     width: 12,
     flexShrink: 0,
   },
-  label: {
-    flex: 1,
-    fontSize: 13,
-    color: 'var(--fg-1)',
-    overflow: 'hidden',
-    whiteSpace: 'nowrap',
-    textOverflow: 'ellipsis',
-    cursor: 'text',
-  },
   count: {
     fontSize: 10,
     color: 'var(--fg-3)',
@@ -372,27 +532,5 @@ const s: Record<string, CSSProperties> = {
     border: '1px solid var(--line-soft)',
     borderRadius: 999,
     flexShrink: 0,
-  },
-  iconBtn: {
-    width: 22,
-    height: 22,
-    borderRadius: 5,
-    color: 'var(--fg-3)',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: '1px solid var(--line-soft)',
-    background: 'var(--bg-2)',
-    flexShrink: 0,
-  },
-  newBtn: {
-    display: 'block',
-    width: '100%',
-    textAlign: 'left',
-    fontSize: 12,
-    color: 'var(--fg-3)',
-    padding: '8px 0 2px',
-    marginTop: 4,
-    borderTop: '1px dashed var(--line-soft)',
   },
 };

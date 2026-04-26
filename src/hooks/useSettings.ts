@@ -31,6 +31,7 @@ export function useSettings(): {
     if (!ready) return;
     document.body.dataset.theme = settings.theme;
     document.body.dataset.density = settings.density;
+    document.body.dataset.reduceMotion = settings.reduceMotion ? '1' : '';
     document.body.dataset.bg = settings.bg;
     document.documentElement.style.setProperty(
       '--accent',

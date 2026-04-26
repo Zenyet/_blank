@@ -4,7 +4,7 @@ import type { Bookmark, GraphEdge, Group, PinsMap } from '../../types';
 import { FaviconCache } from './faviconCache';
 import { buildNodeIndex, findEdgeAt, findNodeAt } from './hitTest';
 import { drawGraph, resizeCanvas, type RenderState, type Theme } from './render';
-import { useCamera, viewToWorld } from './useCamera';
+import { clampScale, useCamera, viewToWorld } from './useCamera';
 import { useGraphSim } from './useGraphSim';
 
 interface Props {
@@ -19,15 +19,27 @@ interface Props {
   filterMatches: Set<string> | null;
   /** When set, camera dolly-zooms onto this node. When cleared, camera resets. */
   focusBookmarkId: string | null;
+  /** Local-graph subset: when non-null, only these nodes (and edges fully
+   *  inside the set) render at full opacity. */
+  focusNeighborhood: Set<string> | null;
+  focusKind: 'node' | 'group' | null;
+  focusGroupId: string | null;
   /** When set, draw a soft hull around the group's nodes. */
   highlightGroupId: string | null;
+  /** Optional explicit node set for the group hull (used for subtree focus). */
+  highlightGroupMembers?: Set<string> | null;
+  highlightGroupHue?: number | null;
   /** Optional user-picked hue per folder id; overrides the hash default. */
   hueOverrides?: Record<string, number>;
+  /** Shorter dolly animations when the user enables reduce motion. */
+  reduceMotion?: boolean;
   onRequestEdge: (fromId: string, toId: string) => void;
   onOpenBookmark: (id: string) => void;
   onBookmarkMenu: (x: number, y: number, id: string, worldPos: { x: number; y: number }) => void;
   onEdgeMenu: (x: number, y: number, id: string) => void;
   onCanvasMenu: (x: number, y: number) => void;
+  /** Power-user gesture: Alt+click on a node enters focus mode for it. */
+  onFocusNode: (id: string) => void;
 }
 
 export function GraphCanvas(props: Props) {
@@ -54,6 +66,17 @@ export function GraphCanvas(props: Props) {
   // Mirror the filter-match set into a ref so the rAF loop can read it
   // without having to resubscribe itself each time the filter changes.
   const filterMatchesRef = useRef<Set<string> | null>(props.filterMatches);
+  // Same trick for focus-mode neighborhood — the rAF loop reads via ref so
+  // entering/exiting focus doesn't tear down the loop.
+  const focusNeighborhoodRef = useRef<Set<string> | null>(props.focusNeighborhood);
+  const highlightGroupMembersRef = useRef<Set<string> | null>(
+    props.highlightGroupMembers ?? null
+  );
+  const renderMetaRef = useRef({
+    focusKind: props.focusKind,
+    highlightGroupId: props.highlightGroupId,
+    highlightGroupHue: props.highlightGroupHue ?? null,
+  });
 
   // Preload favicons whenever bookmarks change.
   useEffect(() => {
@@ -71,35 +94,79 @@ export function GraphCanvas(props: Props) {
   // without being recreated on every keystroke.
   useEffect(() => {
     filterMatchesRef.current = props.filterMatches;
+    focusNeighborhoodRef.current = props.focusNeighborhood;
+    highlightGroupMembersRef.current = props.highlightGroupMembers ?? null;
+    renderMetaRef.current = {
+      focusKind: props.focusKind,
+      highlightGroupId: props.highlightGroupId,
+      highlightGroupHue: props.highlightGroupHue ?? null,
+    };
     needsFrameRef.current = true;
   }, [
     props.filterText,
     props.filterMatches,
+    props.focusNeighborhood,
+    props.focusKind,
     props.edges,
     props.pins,
     props.bookmarks,
     props.highlightGroupId,
+    props.highlightGroupMembers,
+    props.highlightGroupHue,
     props.hueOverrides,
   ]);
 
-  // Dolly-zoom onto the focus node (triggered when the search narrows to a
-  // single match), or drift camera back to identity when focus is cleared.
-  // Nothing happens while multiple candidates remain.
+  // Dolly-zoom onto a focused node/search result, or fit the selected group
+  // subtree when folder focus is active. When focus clears, drift back home.
   useEffect(() => {
+    const msIn = props.reduceMotion ? 1 : 520;
+    const msOut = props.reduceMotion ? 1 : 420;
     const id = props.focusBookmarkId;
     if (id) {
       const node = sim.findById(id);
       const size = lastSizeRef.current;
       if (!node || size.width === 0) return;
       // Warm the simulation so the node settles visibly while the camera zooms.
-      camera.focusOnWorldPoint(node.x, node.y, 2.2, size, 520);
+      camera.focusOnWorldPoint(node.x, node.y, 2.2, size, msIn);
+    } else if (props.focusGroupId && props.focusNeighborhood?.size) {
+      const size = lastSizeRef.current;
+      if (size.width === 0) return;
+      const members = sim.nodesRef.current.filter((n) =>
+        props.focusNeighborhood?.has(n.id)
+      );
+      if (members.length === 0) return;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const n of members) {
+        minX = Math.min(minX, n.x - n.radius);
+        minY = Math.min(minY, n.y - n.radius);
+        maxX = Math.max(maxX, n.x + n.radius);
+        maxY = Math.max(maxY, n.y + n.radius);
+      }
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const w = Math.max(90, maxX - minX);
+      const h = Math.max(90, maxY - minY);
+      const fitW = Math.max(120, size.width - 180);
+      const fitH = Math.max(120, size.height - 180);
+      const fitScale = Math.min(fitW / w, fitH / h);
+      const targetScale = clampScale(Math.max(0.58, Math.min(2.1, fitScale)));
+      camera.focusOnWorldPoint(cx, cy, targetScale, size, msIn);
     } else {
-      camera.focusReset(420);
+      camera.focusReset(msOut);
     }
     // findById reads a live ref, which is fine. We intentionally depend only
-    // on the id so a moving node doesn't retrigger focus mid-flight.
+    // on focus ids/sets so moving nodes don't retrigger focus mid-flight.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.focusBookmarkId, camera]);
+  }, [
+    props.focusBookmarkId,
+    props.focusGroupId,
+    props.focusNeighborhood,
+    camera,
+    props.reduceMotion,
+  ]);
 
   // Subscribe to camera changes so we redraw when the user zooms/pans.
   useEffect(() => {
@@ -153,6 +220,7 @@ export function GraphCanvas(props: Props) {
 
       if (active) {
         if (simulation && alpha > 0.003) simulation.tick();
+        const meta = renderMetaRef.current;
 
         const state: RenderState = {
           nodes: sim.nodesRef.current,
@@ -164,7 +232,11 @@ export function GraphCanvas(props: Props) {
           filterMatches: filterMatchesRef.current,
           ghost: ghostRef.current,
           favicons: faviconsRef.current,
-          highlightGroupId: props.highlightGroupId,
+          highlightGroupId: meta.highlightGroupId,
+          highlightGroupMembers: highlightGroupMembersRef.current,
+          highlightGroupHue: meta.highlightGroupHue,
+          focusNeighborhood: focusNeighborhoodRef.current,
+          focusKind: meta.focusKind,
         };
         drawGraph(ctx, state, camera.cameraRef.current, theme, lastSizeRef.current);
         needsFrameRef.current = false;
@@ -240,6 +312,10 @@ export function GraphCanvas(props: Props) {
         ghostFromId = node.id;
         ghostRef.current = { fromX: node.x, fromY: node.y, toX: wx, toY: wy };
         needsFrameRef.current = true;
+      } else if (node && ev.altKey) {
+        // Alt+click on a node enters focus (local-graph) mode for it. We
+        // intentionally don't promote to drag or fire onOpenBookmark here.
+        props.onFocusNode(node.id);
       } else if (node) {
         pendingDrag = {
           id: node.id,

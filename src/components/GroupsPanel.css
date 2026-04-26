@@ -1,0 +1,162 @@
+/* Group rows live in a vertical list. Hover/pinned visuals come from the
+   data-state attribute set by the component; inline styles still drive
+   per-group hue + dynamic indent so each row stays in lock-step with its
+   data without a styled-components dependency. */
+
+.groups-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    opacity 120ms ease;
+}
+
+/* Subtle vertical guide for nested rows — fades into the indent so deep
+   trees stay legible without dominating. */
+.groups-row[data-depth="0"]::before {
+  display: none;
+}
+
+.groups-row[data-depth]:not([data-depth="0"])::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 14px;
+  width: 1px;
+  background: var(--line-soft);
+  pointer-events: none;
+}
+
+/* Drag/drop indicators are still driven by inline styles (boxShadow) for
+   pixel-precise control, so we don't restyle those here. */
+
+/* Action buttons (rename / delete) — hidden until row hover/focus to keep
+   idle rows quiet. */
+.groups-row__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.groups-row:hover .groups-row__actions,
+.groups-row:focus-within .groups-row__actions,
+.groups-row[data-state="pinned"] .groups-row__actions,
+.groups-row[data-state="focused"] .groups-row__actions {
+  opacity: 1;
+}
+
+.groups-row__icon-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--fg-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-2);
+  flex-shrink: 0;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.groups-row__icon-btn:hover {
+  color: var(--fg);
+  border-color: var(--line);
+}
+
+.groups-row__icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.groups-row__icon-btn--focus[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in oklch, var(--accent) 45%, var(--line));
+}
+
+.groups-row__icon-btn--danger:hover {
+  color: var(--warn);
+  border-color: color-mix(in oklch, var(--warn) 50%, var(--line));
+}
+
+.groups-row__label {
+  flex: 1;
+  font-size: 13px;
+  color: var(--fg-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  user-select: none;
+}
+
+.groups-row[data-state="pinned"] .groups-row__label,
+.groups-row[data-state="focused"] .groups-row__label {
+  color: var(--fg);
+}
+
+/* Inline-create row — same skeleton as a normal row, but with an input
+   instead of a label. Auto-picked hue swatch sits in the same slot as the
+   regular HuePickerButton so the row width doesn't jitter. */
+.groups-row--creating {
+  border-color: color-mix(in oklch, var(--accent) 38%, var(--line));
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
+}
+
+.groups-row__create-input {
+  flex: 1;
+  font-size: 13px;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--fg);
+  font-family: var(--font-sans);
+  padding: 0;
+  min-width: 0;
+}
+
+.groups-row__create-input::placeholder {
+  color: var(--fg-3);
+  opacity: 0.6;
+}
+
+.groups-row__hue-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.18);
+}
+
+.groups-new-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  color: var(--fg-3);
+  padding: 8px 0 2px;
+  margin-top: 4px;
+  border-top: 1px dashed var(--line-soft);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.groups-new-btn:hover:not(:disabled) {
+  color: var(--fg-1);
+}
+
+.groups-new-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

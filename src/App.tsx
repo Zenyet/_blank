@@ -34,7 +34,7 @@ export default function App() {
   return (
     <div className="shell">
       <div className="stage">
-        <Graph data={data} />
+        <Graph data={data} settings={settings} />
       </div>
       <Tweaks
         settings={settings}

@@ -404,19 +404,43 @@ export async function saveTodosRaw<T>(value: T): Promise<void> {
 
 // ─── Favicon URL ──────────────────────────────────────────────────────────
 
-export function faviconUrl(pageUrl: string): string | null {
+/** Stable cache key per bookmark origin (favicon file path varies by site). */
+export function bookmarkOriginKey(pageUrl: string): string | null {
   try {
     const u = new URL(/^https?:\/\//.test(pageUrl) ? pageUrl : `https://${pageUrl}`);
-    return `${u.protocol}//${u.hostname}/favicon.ico`;
+    return u.origin;
   } catch {
     return null;
   }
 }
 
+/**
+ * Common locations tried in order — many sites omit /favicon.ico or only ship PNG / apple-touch.
+ */
+export function faviconCandidates(pageUrl: string): string[] {
+  try {
+    const u = new URL(/^https?:\/\//.test(pageUrl) ? pageUrl : `https://${pageUrl}`);
+    const { origin } = u;
+    return [
+      `${origin}/favicon.ico`,
+      `${origin}/favicon.png`,
+      `${origin}/apple-touch-icon.png`,
+    ];
+  } catch {
+    return [];
+  }
+}
+
+/** First candidate only; prefer `faviconCandidates` when loading. */
+export function faviconUrl(pageUrl: string): string | null {
+  const c = faviconCandidates(pageUrl);
+  return c[0] ?? null;
+}
+
 // ─── Navigation ───────────────────────────────────────────────────────────
 
 export function openUrl(url: string, newTab: boolean = true): void {
-  const full = /^https?:\/\//.test(url) ? url : `https://${url}`;
+  const full = /^[a-z][a-z\d+.-]*:/i.test(url) ? url : `https://${url}`;
   if (newTab) {
     window.open(full, '_blank', 'noopener,noreferrer');
   } else {

@@ -1,0 +1,811 @@
+/* Positioning wrapper — toolbar + results panel stack here so they
+   share one horizontal centerline and animate together. */
+.graph-hud-wrap {
+  --graph-hud-panel-width: min(480px, calc(100vw - 40px));
+  --graph-hud-compact-width: min(360px, calc(100vw - 40px));
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(-40px + 100vw);
+  pointer-events: none;
+}
+
+.graph-hud-wrap > * {
+  pointer-events: auto;
+}
+
+/* Single-shell HUD — the toolbar IS the search container. The inner
+   `.graph-search-field` is a transparent flex slot, not a second pill. */
+.graph-floating-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: var(--graph-hud-compact-width);
+  padding: 4px;
+  background: color-mix(in oklch, var(--bg-1) 72%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+  box-sizing: border-box;
+  max-width: 100%;
+  transition:
+    width 0.26s cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 0.18s ease,
+    box-shadow 0.22s ease,
+    background 0.2s ease;
+}
+
+/* Focus ring lives on the outer shell so the HUD feels like one object. */
+.graph-floating-toolbar:has(.graph-search-input:focus) {
+  width: var(--graph-hud-panel-width);
+  background: color-mix(in oklch, var(--bg-1) 88%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 40%, var(--line));
+  box-shadow:
+    var(--shadow-md),
+    0 0 0 3px var(--accent-soft);
+}
+
+/* Search slot — invisible wrapper. No border, no bg, no shadow.
+   Width transitions so typing reveals a bit more real estate. */
+.graph-search-field {
+  display: flex;
+  align-items: center;
+  flex: 1 1 240px;
+  min-width: min(200px, calc(100vw - 200px));
+  max-width: min(280px, calc(100vw - 200px));
+  height: 36px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  transition:
+    min-width 0.26s cubic-bezier(0.2, 0.8, 0.2, 1),
+    max-width 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.graph-search-field:focus-within {
+  min-width: min(280px, calc(100vw - 200px));
+  max-width: 100%;
+}
+
+.graph-search-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 100%;
+  color: var(--fg-3);
+  opacity: 0.85;
+  transition: color 0.15s ease, opacity 0.15s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.graph-search-field:focus-within .graph-search-ico {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.graph-search-input {
+  flex: 1 1 40px;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0 4px 0 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-size: 14px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  caret-color: var(--accent);
+  font-family: var(--font-sans);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Avoid duplicate “clear” next to our custom control */
+.graph-search-input::-webkit-search-cancel-button,
+.graph-search-input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.graph-search-input::placeholder {
+  color: var(--fg-3);
+  opacity: 0.55;
+  font-weight: 400;
+}
+
+.graph-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 2px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--fg-3) 10%, transparent);
+  color: var(--fg-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+}
+
+.graph-search-clear:hover {
+  color: var(--fg);
+  background: color-mix(in oklch, var(--fg-3) 22%, transparent);
+}
+
+.graph-search-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Right-side shortcut (“/” or ↵) — sits flush inside the toolbar,
+   no vertical divider, just a clear gap from the input. */
+.graph-search-trail {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 0 6px 0 6px;
+  height: 100%;
+}
+
+/* “/” 快捷键 — 键帽感，用等宽字体的字重而非 SVG 细线 */
+.graph-search-shortcut {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.graph-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  height: 1.45rem;
+  padding: 0 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  color: var(--fg-1);
+  /* 实体键帽：等宽 + 字重，比 SVG 描边斜线更像「键」 */
+  background: linear-gradient(180deg, var(--bg-2), var(--bg-3));
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  box-shadow:
+    0 1px 0 oklch(1 0 0 / 0.07),
+    0 1px 1px oklch(0 0 0 / 0.22);
+}
+
+/* Match count + enter */
+.graph-search-badgerow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.graph-search-badgerow--ok {
+  color: var(--fg-1);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+}
+
+.graph-search-badgerow--ok .graph-search-meta-ico {
+  color: var(--fg-3);
+  opacity: 0.9;
+}
+
+.graph-search-badgerow--warn {
+  padding: 3px 7px;
+  border-radius: 6px;
+  color: var(--warn);
+  font-size: 11px;
+  font-weight: 500;
+  background: color-mix(in oklch, var(--warn) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--warn) 22%, transparent);
+}
+
+.graph-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  flex-shrink: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--line-soft) 25%,
+    var(--line-soft) 75%,
+    transparent 100%
+  );
+}
+
+/* Toolbar icon buttons (grouped with search) */
+.graph-tool-btn {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--fg-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.graph-tool-btn:hover {
+  color: var(--fg);
+  background: color-mix(in oklch, var(--fg-3) 8%, transparent);
+  border-color: color-mix(in oklch, var(--line) 45%, transparent);
+}
+
+.graph-tool-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.graph-tool-btn--active {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--fg);
+}
+
+.graph-tool-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   Command-palette-style results panel
+   ──────────────────────────────────────────────────────────────── */
+.graph-results-panel {
+  display: flex;
+  flex-direction: column;
+  width: var(--graph-hud-panel-width);
+  max-height: min(420px, calc(100vh - 160px));
+  background: color-mix(in oklch, var(--bg-1) 82%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: graph-results-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes graph-results-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.graph-results-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.graph-results-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-1);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.graph-results-item + .graph-results-item {
+  margin-top: 2px;
+}
+
+.graph-results-item[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.graph-results-favicon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-1);
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+}
+
+.graph-results-favicon--google {
+  background: oklch(1 0 0 / 0.96);
+  box-shadow:
+    0 0 0 1px oklch(0 0 0 / 0.08),
+    0 1px 2px oklch(0 0 0 / 0.16);
+}
+
+.graph-results-favicon--provider {
+  background: color-mix(in oklch, var(--accent) 18%, var(--bg-2));
+  color: var(--accent);
+  border: 1px solid color-mix(in oklch, var(--accent) 34%, var(--line));
+}
+
+.graph-results-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.graph-results-name {
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.graph-results-name em {
+  font-style: normal;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.graph-results-domain {
+  font-size: 11px;
+  color: var(--fg-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+  text-align: right;
+}
+
+.graph-results-enterhint {
+  flex-shrink: 0;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  color: var(--fg-2);
+}
+
+.graph-results-item[aria-selected="true"] .graph-results-enterhint {
+  opacity: 0.8;
+  transform: translateX(0);
+  color: var(--fg);
+}
+
+.graph-results-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 11px;
+  color: var(--fg-3);
+  flex-shrink: 0;
+  background: color-mix(in oklch, var(--bg) 25%, transparent);
+}
+
+.graph-results-footer > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.graph-results-footer .graph-kbd {
+  font-size: 10.5px;
+  min-width: 1.25rem;
+  height: 1.3rem;
+  padding: 0 0.34rem;
+}
+
+.graph-results-footer .graph-kbd--icon {
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   Focus-mode chip — shown while a node's local graph is isolated.
+   ──────────────────────────────────────────────────────────────── */
+.graph-focus-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
+  background: color-mix(in oklch, var(--bg-1) 78%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid color-mix(in oklch, var(--accent) 38%, var(--line));
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+  font-size: 12px;
+  color: var(--fg-1);
+  max-width: var(--graph-hud-panel-width);
+  animation: graph-results-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.graph-focus-chip__label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+.graph-focus-chip__name {
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.graph-focus-chip__swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  box-shadow:
+    inset 0 0 0 1px oklch(1 0 0 / 0.18),
+    0 0 0 3px color-mix(in oklch, currentColor 8%, transparent);
+}
+
+.graph-focus-chip__count {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--fg-3);
+  padding: 2px 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+}
+
+.graph-focus-chip__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 0;
+  background: color-mix(in oklch, var(--fg-3) 10%, transparent);
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.graph-focus-chip__close:hover {
+  background: color-mix(in oklch, var(--warn) 22%, transparent);
+  color: var(--fg);
+}
+
+.graph-focus-chip__close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Suggestion strip — appears under the focus chip when curated host
+   clusters surface bookmarks that share a cluster but aren't connected. */
+.graph-focus-suggest {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: color-mix(in oklch, var(--bg-1) 72%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  border: 1px dashed color-mix(in oklch, var(--accent) 32%, var(--line));
+  border-radius: 999px;
+  max-width: var(--graph-hud-panel-width);
+  animation: graph-results-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.graph-focus-suggest__label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  padding: 0 4px 0 2px;
+}
+
+.graph-focus-suggest__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 4px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-2);
+  color: var(--fg-1);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.2;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.graph-focus-suggest__pill:hover {
+  border-color: color-mix(in oklch, var(--accent) 50%, var(--line));
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.graph-focus-suggest__pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.graph-focus-suggest__name {
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.graph-focus-suggest__plus {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Right-side groups dock. The open panel and folded rail share the same
+   anchor so collapsing feels like the panel tucking into the edge. */
+.graph-groups-dock {
+  position: fixed;
+  top: 72px;
+  right: 20px;
+  z-index: 120;
+  pointer-events: auto;
+}
+
+.graph-groups-panel {
+  width: min(340px, calc(100vw - 40px));
+  max-height: min(620px, calc(100vh - 120px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--bg-1) 88%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  animation: graph-panel-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes graph-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.graph-groups-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 9px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+
+.graph-groups-panel__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.graph-groups-panel__count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-3);
+  margin-left: auto;
+}
+
+.graph-groups-panel__collapse {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--fg-3);
+  border: 1px solid transparent;
+  flex-shrink: 0;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.graph-groups-panel__collapse:hover {
+  color: var(--fg);
+  background: var(--bg-2);
+  border-color: var(--line-soft);
+}
+
+.graph-groups-panel__collapse:focus-visible,
+.graph-groups-rail button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.graph-groups-panel__body {
+  padding: 8px 10px 12px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.graph-groups-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  background: color-mix(in oklch, var(--bg-1) 76%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+  animation: graph-rail-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes graph-rail-in {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.graph-groups-rail__main,
+.graph-groups-rail__focus {
+  width: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-2);
+  color: var(--fg-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.graph-groups-rail__main {
+  position: relative;
+  height: 36px;
+}
+
+.graph-groups-rail__main:hover,
+.graph-groups-rail__focus:hover {
+  color: var(--fg);
+  background: var(--bg-3);
+  border-color: var(--line);
+}
+
+.graph-groups-rail__badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 18px;
+  box-shadow: 0 0 0 2px var(--bg-1);
+}
+
+.graph-groups-rail__focus {
+  min-height: 48px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 0;
+  border-color: color-mix(in oklch, var(--accent) 42%, var(--line));
+  background: var(--accent-soft);
+}
+
+.graph-groups-rail__swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.18);
+}
+
+.graph-groups-rail__mini-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-2);
+  line-height: 1;
+}
+
+@media (max-width: 640px) {
+  .graph-groups-dock {
+    top: 64px;
+    right: 12px;
+  }
+
+  .graph-groups-panel {
+    width: min(320px, calc(100vw - 24px));
+    max-height: calc(100vh - 96px);
+  }
+}

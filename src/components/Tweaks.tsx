@@ -1,7 +1,7 @@
 import type { ChangeEvent, CSSProperties } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import type { BgPattern, Settings } from '../types';
-import { BUILTIN_BACKGROUNDS, backgroundImageCssValue } from '../data/backgrounds';
+import { BUILTIN_BACKGROUNDS, backgroundImageCssValue, isGradientValue } from '../data/backgrounds';
 import { copy } from '../i18n';
 import {
   loadUserBackgrounds,
@@ -11,7 +11,10 @@ import {
   subscribeUserBackgrounds,
   type UserBackground,
 } from '../services/userBackgrounds';
-import { HuePalette } from './ColorPicker';
+import {
+  DEFAULT_CUSTOM_SEARCH_URL,
+  SEARCH_PROVIDERS,
+} from '../services/searchProviders';
 
 interface Props {
   settings: Settings;
@@ -43,6 +46,20 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
       unsub();
     };
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onToggle();
+    };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open, onToggle]);
 
   const applyImage = (dataUrl: string) => {
     onChange({ bg: 'image', bgImage: dataUrl });
@@ -114,8 +131,27 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
       </button>
 
       {open && (
-        <div className="tweaks" role="dialog" aria-label={copy.tweaks.title}>
-          <h4>{copy.tweaks.title}</h4>
+        <>
+          <div className="tweaks-scrim" onClick={onToggle} aria-hidden="true" />
+          <div
+            className="tweaks-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tweaks-title"
+          >
+            <div className="tweaks-head">
+              <h4 id="tweaks-title">{copy.tweaks.title}</h4>
+              <button
+                type="button"
+                className="tweaks-close"
+                onClick={onToggle}
+                aria-label="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <div className="tweaks" aria-label={copy.tweaks.title}>
+              <div className="tweaks-section">{copy.tweaks.sectionLook}</div>
 
           <div className="row">
             <label>{copy.tweaks.theme}</label>
@@ -127,29 +163,6 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
                   onClick={() => onChange({ theme: v })}
                 >
                   {copy.tweaks.themes[v]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="row rowColumn">
-            <label>{copy.tweaks.accent}</label>
-            <HuePalette
-              value={settings.accentHue}
-              onChange={(h) => onChange({ accentHue: h })}
-            />
-          </div>
-
-          <div className="row">
-            <label>{copy.tweaks.density}</label>
-            <div className="toggle">
-              {(['cozy', 'compact'] as const).map((v) => (
-                <button
-                  key={v}
-                  className={settings.density === v ? 'active' : ''}
-                  onClick={() => onChange({ density: v })}
-                >
-                  {copy.tweaks.densities[v]}
                 </button>
               ))}
             </div>
@@ -258,7 +271,7 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
                 </>
               )}
 
-              {settings.bgImage && (
+              {settings.bgImage && !isGradientValue(settings.bgImage) && (
                 <div
                   style={{
                     width: '100%',
@@ -369,25 +382,245 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
               )}
             </div>
           )}
-        </div>
+
+          <div className="tweaks-section">{copy.tweaks.sectionSearch}</div>
+
+          <div className="row rowColumn">
+            <div className="tweaks-metric">
+              <span>{copy.tweaks.searchProvider}</span>
+              <span className="tweaks-metric-hint">{copy.tweaks.searchProviderHint}</span>
+            </div>
+            <div style={searchProviderGrid}>
+              {SEARCH_PROVIDERS.map((provider) => {
+                const active = settings.searchProvider === provider.id;
+                return (
+                  <button
+                    key={provider.id}
+                    type="button"
+                    onClick={() => onChange({ searchProvider: provider.id })}
+                    style={{
+                      ...searchProviderButton,
+                      ...(active ? searchProviderButtonActive : {}),
+                    }}
+                  >
+                    <span style={providerText}>
+                      <span>{provider.label}</span>
+                      <span style={providerDescription}>
+                        {provider.description}
+                      </span>
+                    </span>
+                    <span style={providerBadge}>
+                      {provider.kind === 'ask'
+                        ? copy.tweaks.searchKindAsk
+                        : copy.tweaks.searchKindSearch}
+                    </span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() =>
+                  onChange({
+                    searchProvider: 'custom',
+                    customSearchUrl:
+                      settings.customSearchUrl || DEFAULT_CUSTOM_SEARCH_URL,
+                  })
+                }
+                style={{
+                  ...searchProviderButton,
+                  ...(settings.searchProvider === 'custom'
+                    ? searchProviderButtonActive
+                    : {}),
+                }}
+              >
+                <span style={providerText}>
+                  <span>{settings.customSearchName.trim() || '自定义'}</span>
+                  <span style={providerDescription}>
+                    {settings.customSearchUrl.trim() || '自定义链接模板'}
+                  </span>
+                </span>
+                <span style={providerBadge}>URL</span>
+              </button>
+            </div>
+            {settings.searchProvider === 'custom' && (
+              <div style={searchCustomGrid}>
+                <input
+                  value={settings.customSearchName}
+                  onChange={(e) =>
+                    onChange({
+                      searchProvider: 'custom',
+                      customSearchName: e.target.value,
+                    })
+                  }
+                  placeholder={copy.tweaks.customSearchName}
+                  style={urlInputStyle}
+                />
+                <input
+                  value={settings.customSearchUrl}
+                  onChange={(e) =>
+                    onChange({
+                      searchProvider: 'custom',
+                      customSearchUrl: e.target.value,
+                    })
+                  }
+                  placeholder={copy.tweaks.customSearchUrl}
+                  style={urlInputStyle}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="tweaks-section">{copy.tweaks.sectionBehavior}</div>
+
+          <div className="row">
+            <div className="tweaks-metric">
+              <span>{copy.tweaks.reduceMotion}</span>
+              <span className="tweaks-metric-hint">{copy.tweaks.reduceMotionHint}</span>
+            </div>
+            <div className="toggle">
+              <button
+                type="button"
+                className={!settings.reduceMotion ? 'active' : ''}
+                onClick={() => onChange({ reduceMotion: false })}
+              >
+                关
+              </button>
+              <button
+                type="button"
+                className={settings.reduceMotion ? 'active' : ''}
+                onClick={() => onChange({ reduceMotion: true })}
+              >
+                开
+              </button>
+            </div>
+          </div>
+
+          <div className="row">
+            <div className="tweaks-metric">
+              <span>{copy.tweaks.showStrip}</span>
+              <span className="tweaks-metric-hint">{copy.tweaks.showStripHint}</span>
+            </div>
+            <div className="toggle">
+              <button
+                type="button"
+                className={settings.showStrip ? 'active' : ''}
+                onClick={() => onChange({ showStrip: true })}
+              >
+                显示
+              </button>
+              <button
+                type="button"
+                className={!settings.showStrip ? 'active' : ''}
+                onClick={() => onChange({ showStrip: false })}
+              >
+                隐藏
+              </button>
+            </div>
+          </div>
+
+          <div className="row">
+            <div className="tweaks-metric">
+              <span>{copy.tweaks.openInNewTab}</span>
+              <span className="tweaks-metric-hint">{copy.tweaks.openInNewTabHint}</span>
+            </div>
+            <div className="toggle">
+              <button
+                type="button"
+                className={settings.openInNewTab ? 'active' : ''}
+                onClick={() => onChange({ openInNewTab: true })}
+              >
+                是
+              </button>
+              <button
+                type="button"
+                className={!settings.openInNewTab ? 'active' : ''}
+                onClick={() => onChange({ openInNewTab: false })}
+              >
+                否
+              </button>
+            </div>
+          </div>
+            </div>
+          </div>
+        </>
       )}
     </>
   );
 }
 
 const tweakBtnStyle = {
-  padding: '6px 10px',
+  padding: '7px 10px',
   fontSize: 11,
-  borderRadius: 6,
+  lineHeight: 1.25,
+  borderRadius: 7,
   color: 'var(--fg-2)',
   background: 'var(--bg-2)',
   border: '1px solid var(--line)',
 };
 
+const searchProviderGrid: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))',
+  gap: 8,
+};
+
+const searchProviderButton: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  minHeight: 54,
+  padding: '10px 11px',
+  borderRadius: 8,
+  border: '1px solid var(--line)',
+  background: 'var(--bg-2)',
+  color: 'var(--fg-2)',
+  fontSize: 12,
+  textAlign: 'left',
+};
+
+const searchProviderButtonActive: CSSProperties = {
+  borderColor: 'var(--accent)',
+  background: 'var(--accent-soft)',
+  color: 'var(--fg)',
+};
+
+const providerBadge: CSSProperties = {
+  flexShrink: 0,
+  padding: '3px 6px',
+  borderRadius: 6,
+  background: 'color-mix(in oklch, var(--fg-3) 12%, transparent)',
+  color: 'var(--fg-3)',
+  fontSize: 10,
+  lineHeight: 1,
+};
+
+const providerText: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 3,
+  minWidth: 0,
+};
+
+const providerDescription: CSSProperties = {
+  color: 'var(--fg-3)',
+  fontSize: 10.5,
+  lineHeight: 1.3,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+const searchCustomGrid: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))',
+  gap: 8,
+};
+
 const galleryGrid = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(4, 1fr)',
-  gap: 6,
+  gridTemplateColumns: 'repeat(auto-fit, minmax(48px, 1fr))',
+  gap: 8,
 };
 
 const galleryItem: CSSProperties = {
@@ -448,9 +681,10 @@ const galleryLabel: CSSProperties = {
 const urlInputStyle = {
   flex: 1,
   minWidth: 0,
-  padding: '6px 10px',
-  fontSize: 11,
-  borderRadius: 6,
+  padding: '9px 11px',
+  fontSize: 12,
+  lineHeight: 1.35,
+  borderRadius: 7,
   color: 'var(--fg)',
   background: 'var(--bg-2)',
   border: '1px solid var(--line)',

@@ -44,6 +44,14 @@ export interface Quote {
 export type Theme = 'dark' | 'light';
 export type Density = 'cozy' | 'compact';
 export type BgPattern = 'flat' | 'grain' | 'grid' | 'image';
+export type SearchProviderId =
+  | 'google'
+  | 'bing'
+  | 'duckduckgo'
+  | 'perplexity'
+  | 'chatgpt'
+  | 'claude'
+  | 'custom';
 
 export interface Settings {
   theme: Theme;
@@ -55,6 +63,18 @@ export interface Settings {
   /** 0..1. Darkening overlay on top of the background image so foreground
    *  text stays legible. */
   bgImageDim: number;
+  /** Shorter force-graph and search zoom animations. */
+  reduceMotion: boolean;
+  /** Show the floating “frequent / recent” strip at the bottom. */
+  showStrip: boolean;
+  /** Open bookmark URLs in a new tab; if false, navigate the current tab. */
+  openInNewTab: boolean;
+  /** Fallback target used when graph search has no bookmark matches. */
+  searchProvider: SearchProviderId;
+  /** Label shown for the custom fallback search / ask target. */
+  customSearchName: string;
+  /** URL template for custom fallback queries. Use `{query}` as placeholder. */
+  customSearchUrl: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -64,6 +84,12 @@ export const DEFAULT_SETTINGS: Settings = {
   bg: 'flat',
   bgImage: null,
   bgImageDim: 0.35,
+  reduceMotion: false,
+  showStrip: true,
+  openInNewTab: true,
+  searchProvider: 'google',
+  customSearchName: '自定义',
+  customSearchUrl: 'https://www.google.com/search?q={query}',
 };
 
 export interface ChromeData {

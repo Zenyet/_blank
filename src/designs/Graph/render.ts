@@ -16,6 +16,13 @@ export interface RenderState {
   favicons: FaviconCache;
   /** When set, draw a soft hull behind all nodes whose parentId equals this. */
   highlightGroupId: string | null;
+  /** Optional explicit node set for hulls that include descendant folders. */
+  highlightGroupMembers?: Set<string> | null;
+  highlightGroupHue?: number | null;
+  /** Local-graph mode: when set, only nodes in this set render at full
+   *  opacity and only edges with both endpoints inside it are drawn. */
+  focusNeighborhood: Set<string> | null;
+  focusKind: 'node' | 'group' | null;
 }
 
 export interface Theme {
@@ -75,10 +82,12 @@ export function drawGraph(
  */
 function drawGroupHighlight(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const id = state.highlightGroupId!;
-  const members = state.nodes.filter((n) => n.parentId === id);
+  const members = state.highlightGroupMembers
+    ? state.nodes.filter((n) => state.highlightGroupMembers!.has(n.id))
+    : state.nodes.filter((n) => n.parentId === id);
   if (members.length === 0) return;
 
-  const hue = members[0]!.groupHue;
+  const hue = state.highlightGroupHue ?? members[0]!.groupHue;
   const padding = 36 + (members[0]!.radius ?? 14);
 
   ctx.save();
@@ -125,9 +134,17 @@ function drawGroupHighlight(ctx: CanvasRenderingContext2D, state: RenderState): 
   ctx.restore();
 }
 
-function alphaFor(nodeId: string, filter: Set<string> | null): number {
-  if (!filter) return 1;
-  return filter.has(nodeId) ? 1 : 0.15;
+function alphaFor(
+  nodeId: string,
+  filter: Set<string> | null,
+  focus: Set<string> | null
+): number {
+  // Focus mode dominates: out-of-neighborhood nodes are heavily faded so the
+  // sub-graph reads as foreground. Filter dim layers on top.
+  let a = 1;
+  if (focus && !focus.has(nodeId)) a = Math.min(a, 0.08);
+  if (filter && !filter.has(nodeId)) a = Math.min(a, 0.15);
+  return a;
 }
 
 function hueString(h: number, l = 70, c = 0.17): string {
@@ -140,9 +157,16 @@ function drawEdges(ctx: CanvasRenderingContext2D, state: RenderState): void {
     const a = byId.get(e.from);
     const b = byId.get(e.to);
     if (!a || !b) continue;
+    // In focus mode, hide edges that leave the neighborhood — they only
+    // create visual noise and would tether the foreground graph to faded
+    // background nodes.
+    if (state.focusNeighborhood) {
+      if (!state.focusNeighborhood.has(a.id) || !state.focusNeighborhood.has(b.id))
+        continue;
+    }
     const isHover = state.hoverEdgeId === e.id;
-    const aAlpha = alphaFor(a.id, state.filterMatches);
-    const bAlpha = alphaFor(b.id, state.filterMatches);
+    const aAlpha = alphaFor(a.id, state.filterMatches, state.focusNeighborhood);
+    const bAlpha = alphaFor(b.id, state.filterMatches, state.focusNeighborhood);
     const alpha = Math.min(aAlpha, bAlpha) * (isHover ? 1 : 0.6);
 
     const grad = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
@@ -193,7 +217,7 @@ function drawNodes(
   _theme: Theme
 ): void {
   for (const n of state.nodes) {
-    const alpha = alphaFor(n.id, state.filterMatches);
+    const alpha = alphaFor(n.id, state.filterMatches, state.focusNeighborhood);
     const isHover = state.hoverNodeId === n.id;
     const isDragging = state.draggingId === n.id;
     const isPinned = Object.prototype.hasOwnProperty.call(state.pins, n.id);
@@ -258,7 +282,9 @@ function drawLabels(
     const isHover = state.hoverNodeId === n.id;
     const isMatch = state.filterMatches?.has(n.id) ?? false;
     const isPinned = Object.prototype.hasOwnProperty.call(state.pins, n.id);
-    if (!isHover && !isMatch && !isPinned) continue;
+    const isFocus =
+      state.focusKind === 'node' && (state.focusNeighborhood?.has(n.id) ?? false);
+    if (!isHover && !isMatch && !isPinned && !isFocus) continue;
     ctx.fillStyle = theme.fg;
     ctx.fillText(n.name, n.x, n.y + n.radius + 4);
     if (isHover) {
