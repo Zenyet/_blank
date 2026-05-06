@@ -1,5 +1,4 @@
 import type { Bookmark, ChromeData, Group, HistoryItem, Settings } from '../types';
-import { FALLBACK_BOOKMARKS, FALLBACK_GROUPS, FALLBACK_RECENTS } from '../data/fallback';
 import { DEFAULT_SETTINGS } from '../types';
 import {
   mockCreateBookmark,
@@ -107,15 +106,6 @@ async function loadBookmarks(): Promise<{
     depth: number
   ) => {
     if (!node.children) return;
-    const looseUnderThis = node.children.some((c) => c.url);
-    if (looseUnderThis && node.id === barId) {
-      // Loose bookmarks directly on the bar fall under a virtual "置顶" group
-      // whose id reuses barId (matches prior behaviour so users see them
-      // grouped visually).
-      if (!groups.some((g) => g.id === barId)) {
-        groups.push({ id: barId, label: '置顶', parentGroupId: null, depth: 0 });
-      }
-    }
     for (const child of node.children) {
       if (child.url) {
         const label = child.title || domainOf(child.url);
@@ -143,7 +133,7 @@ async function loadBookmarks(): Promise<{
       }
     }
   };
-  walk(bar, '置顶', 0);
+  walk(bar, '未分组', 0);
 
   return { bookmarks, groups, barId };
 }
@@ -209,13 +199,7 @@ async function loadTopSites(barId: string): Promise<{ bookmarks: Bookmark[]; gro
       visits: 100 - i * 3,
       last: '—',
     }));
-    return {
-      bookmarks: bms,
-      groups:
-        bms.length > 0
-          ? [{ id: barId, label: '常用', parentGroupId: null, depth: 0 }]
-          : [],
-    };
+    return { bookmarks: bms, groups: [] };
   } catch {
     return { bookmarks: [], groups: [] };
   }
@@ -257,11 +241,11 @@ export async function loadChromeData(): Promise<ChromeData> {
 
   if (bookmarks.length === 0) {
     return {
-      bookmarks: FALLBACK_BOOKMARKS,
-      recents: FALLBACK_RECENTS,
-      groups: FALLBACK_GROUPS,
+      bookmarks,
+      recents,
+      groups,
       barId,
-      source: 'fallback',
+      source: 'chrome',
     };
   }
 

@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "New Tab — Design Explorations",
-  "short_name": "New Tab",
+  "name": "Bookmark Graph New Tab",
+  "short_name": "Bookmark Graph",
   "version": "0.1.0",
-  "description": "A thoughtful new tab with four design modes: Quiet Deck, Command Deck, Workspace Dock, and Constellation.",
+  "description": "Explore, search, and edit Chrome bookmarks as an Obsidian-style graph.",
   "chrome_url_overrides": {
     "newtab": "index.html"
   },

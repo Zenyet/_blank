@@ -8,7 +8,7 @@
  */
 
 import type { MutableRefObject } from 'react';
-import type { Bookmark, GraphEdge, GraphNode, Group, PinsMap } from '../../../types';
+import type { GraphEdge, GraphItem, GraphNode, Group, PinsMap } from '../../../types';
 
 /**
  * Minimal simulation surface the render loop reads each rAF tick.
@@ -22,7 +22,7 @@ export interface SimulationLike {
 }
 
 export interface SimParams {
-  bookmarks: Bookmark[];
+  bookmarks: GraphItem[];
   groups: Group[];
   edges: GraphEdge[];
   pins: PinsMap;

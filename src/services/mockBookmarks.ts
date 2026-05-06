@@ -122,12 +122,6 @@ export function mockLoadData(): {
   // points to a registered group id.
   const walk = (parentNodeId: string, groupLabelForUrls: string, depth: number) => {
     const children = s.nodes.filter((c) => c.parentId === parentNodeId);
-    const looseHere = children.some((c) => c.url !== undefined);
-    if (parentNodeId === MOCK_BAR_ID && looseHere) {
-      if (!groups.some((g) => g.id === MOCK_BAR_ID)) {
-        groups.push({ id: MOCK_BAR_ID, label: '置顶', parentGroupId: null, depth: 0 });
-      }
-    }
     for (const child of children) {
       if (child.url !== undefined) {
         bookmarks.push(bookmarkFromNode(child, groupLabelForUrls));
@@ -143,7 +137,7 @@ export function mockLoadData(): {
       }
     }
   };
-  walk(MOCK_BAR_ID, '置顶', 0);
+  walk(MOCK_BAR_ID, '未分组', 0);
 
   // Prefer the fallback's visit/color data when the node matches by id — that
   // keeps the familiar "Top" and color assignments intact in dev.

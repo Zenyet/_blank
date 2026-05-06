@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
-import type { Bookmark, GraphEdge, Group, PinsMap } from '../../types';
+import type { GraphEdge, GraphItem, Group, PinsMap } from '../../types';
 import { FaviconCache } from './faviconCache';
 import { buildNodeIndex, findEdgeAt, findNodeAt } from './hitTest';
 import { drawGraph, resizeCanvas, type RenderState, type Theme } from './render';
@@ -8,7 +8,7 @@ import { clampScale, useCamera, viewToWorld } from './useCamera';
 import { useGraphSim } from './useGraphSim';
 
 interface Props {
-  bookmarks: Bookmark[];
+  bookmarks: GraphItem[];
   groups: Group[];
   edges: GraphEdge[];
   pins: PinsMap;
@@ -35,11 +35,22 @@ interface Props {
   reduceMotion?: boolean;
   onRequestEdge: (fromId: string, toId: string) => void;
   onOpenBookmark: (id: string) => void;
+  onOpenGroup: (id: string) => void;
   onBookmarkMenu: (x: number, y: number, id: string, worldPos: { x: number; y: number }) => void;
+  onGroupMenu: (x: number, y: number, id: string) => void;
   onEdgeMenu: (x: number, y: number, id: string) => void;
   onCanvasMenu: (x: number, y: number) => void;
   /** Power-user gesture: Alt+click on a node enters focus mode for it. */
   onFocusNode: (id: string) => void;
+}
+
+const isGroupNode = (n: GraphItem | null | undefined) => n?.nodeKind === 'group';
+
+interface CameraTracking {
+  id: string;
+  targetScale: number;
+  startedAt: number;
+  settledFrames: number;
 }
 
 export function GraphCanvas(props: Props) {
@@ -62,6 +73,8 @@ export function GraphCanvas(props: Props) {
   const ghostRef = useRef<RenderState['ghost']>(null);
   const panRef = useRef<{ startX: number; startY: number; tx0: number; ty0: number } | null>(null);
   const needsFrameRef = useRef(true);
+  const trackingRef = useRef<CameraTracking | null>(null);
+  const reduceMotionRef = useRef(props.reduceMotion);
   const lastSizeRef = useRef({ width: 0, height: 0, dpr: 1 });
   // Mirror the filter-match set into a ref so the rAF loop can read it
   // without having to resubscribe itself each time the filter changes.
@@ -81,6 +94,7 @@ export function GraphCanvas(props: Props) {
   // Preload favicons whenever bookmarks change.
   useEffect(() => {
     for (const b of props.bookmarks) {
+      if (b.nodeKind === 'group') continue;
       faviconsRef.current.ensureLoaded(b.url, () => {
         needsFrameRef.current = true;
       });
@@ -93,6 +107,7 @@ export function GraphCanvas(props: Props) {
   // Also syncs `filterMatchesRef` so the rAF loop can read the latest set
   // without being recreated on every keystroke.
   useEffect(() => {
+    reduceMotionRef.current = props.reduceMotion;
     filterMatchesRef.current = props.filterMatches;
     focusNeighborhoodRef.current = props.focusNeighborhood;
     highlightGroupMembersRef.current = props.highlightGroupMembers ?? null;
@@ -116,19 +131,23 @@ export function GraphCanvas(props: Props) {
     props.hueOverrides,
   ]);
 
-  // Dolly-zoom onto a focused node/search result, or fit the selected group
-  // subtree when folder focus is active. When focus clears, drift back home.
+  // Enter/exit camera tracking. Search focus follows the live node position
+  // inside the rAF loop instead of scheduling repeated one-shot animations.
   useEffect(() => {
     const msIn = props.reduceMotion ? 1 : 520;
     const msOut = props.reduceMotion ? 1 : 420;
     const id = props.focusBookmarkId;
     if (id) {
-      const node = sim.findById(id);
-      const size = lastSizeRef.current;
-      if (!node || size.width === 0) return;
-      // Warm the simulation so the node settles visibly while the camera zooms.
-      camera.focusOnWorldPoint(node.x, node.y, 2.2, size, msIn);
+      camera.cancelFocus();
+      trackingRef.current = {
+        id,
+        targetScale: 2.2,
+        startedAt: performance.now(),
+        settledFrames: 0,
+      };
+      needsFrameRef.current = true;
     } else if (props.focusGroupId && props.focusNeighborhood?.size) {
+      trackingRef.current = null;
       const size = lastSizeRef.current;
       if (size.width === 0) return;
       const members = sim.nodesRef.current.filter((n) =>
@@ -155,13 +174,16 @@ export function GraphCanvas(props: Props) {
       const targetScale = clampScale(Math.max(0.58, Math.min(2.1, fitScale)));
       camera.focusOnWorldPoint(cx, cy, targetScale, size, msIn);
     } else {
+      trackingRef.current = null;
       camera.focusReset(msOut);
     }
-    // findById reads a live ref, which is fine. We intentionally depend only
-    // on focus ids/sets so moving nodes don't retrigger focus mid-flight.
+    // findById reads a live ref. We also depend on filter text because search
+    // can keep the same selected id while the query narrows to a single hit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     props.focusBookmarkId,
+    props.filterText,
+    props.bookmarks,
     props.focusGroupId,
     props.focusNeighborhood,
     camera,
@@ -207,12 +229,46 @@ export function GraphCanvas(props: Props) {
     let raf = 0;
     let running = true;
 
+    const updateTracking = () => {
+      const t = trackingRef.current;
+      if (!t) return false;
+      const node = sim.findById(t.id);
+      const now = performance.now();
+      if (!node) {
+        if (now - t.startedAt > 1200) trackingRef.current = null;
+        return trackingRef.current !== null;
+      }
+
+      const s = clampScale(t.targetScale);
+      const target = { scale: s, tx: -node.x * s, ty: -node.y * s };
+      const current = camera.cameraRef.current;
+      const alpha = reduceMotionRef.current ? 1 : 0.16;
+      const next = {
+        scale: current.scale + (target.scale - current.scale) * alpha,
+        tx: current.tx + (target.tx - current.tx) * alpha,
+        ty: current.ty + (target.ty - current.ty) * alpha,
+      };
+      camera.cameraRef.current = next;
+
+      const cameraDelta =
+        Math.hypot(target.tx - next.tx, target.ty - next.ty) +
+        Math.abs(target.scale - next.scale) * 120;
+      const nodeSpeed = Math.hypot(node.vx, node.vy);
+      if (cameraDelta < 0.85 && nodeSpeed < 0.08) t.settledFrames += 1;
+      else t.settledFrames = 0;
+      if (t.settledFrames >= 12 || now - t.startedAt > 1400) {
+        trackingRef.current = null;
+      }
+      return true;
+    };
+
     const loop = () => {
       if (!running) return;
       const simulation = sim.simulationRef.current;
       const alpha = simulation?.alpha() ?? 0;
       const active =
         alpha > 0.003 ||
+        trackingRef.current !== null ||
         needsFrameRef.current ||
         dragIdRef.current !== null ||
         panRef.current !== null ||
@@ -220,6 +276,7 @@ export function GraphCanvas(props: Props) {
 
       if (active) {
         if (simulation && alpha > 0.003) simulation.tick();
+        updateTracking();
         const meta = renderMetaRef.current;
 
         const state: RenderState = {
@@ -267,6 +324,10 @@ export function GraphCanvas(props: Props) {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    const cancelTracking = () => {
+      trackingRef.current = null;
+    };
+
     const toWorld = (ev: PointerEvent): [number, number] => {
       const rect = canvas.getBoundingClientRect();
       return viewToWorld(
@@ -305,14 +366,19 @@ export function GraphCanvas(props: Props) {
 
     const onDown = (ev: PointerEvent) => {
       if (ev.button === 2) return; // right-click handled on contextmenu
+      cancelTracking();
       camera.cancelFocus(); // user is taking over
       const [wx, wy] = toWorld(ev);
       const node = nodeAt(wx, wy);
-      if (node && ev.shiftKey) {
+      if (node && ev.shiftKey && !isGroupNode(node)) {
         ghostFromId = node.id;
         ghostRef.current = { fromX: node.x, fromY: node.y, toX: wx, toY: wy };
         needsFrameRef.current = true;
       } else if (node && ev.altKey) {
+        if (isGroupNode(node)) {
+          props.onOpenGroup(node.groupId ?? node.id);
+          return;
+        }
         // Alt+click on a node enters focus (local-graph) mode for it. We
         // intentionally don't promote to drag or fire onOpenBookmark here.
         props.onFocusNode(node.id);
@@ -391,7 +457,9 @@ export function GraphCanvas(props: Props) {
       if (pendingDrag) {
         // Pointer never crossed slop → this is a pure click. Open without
         // touching the physics simulation.
-        props.onOpenBookmark(pendingDrag.id);
+        const clicked = sim.findById(pendingDrag.id);
+        if (clicked && isGroupNode(clicked)) props.onOpenGroup(clicked.groupId ?? clicked.id);
+        else props.onOpenBookmark(pendingDrag.id);
         pendingDrag = null;
         return;
       }
@@ -411,6 +479,7 @@ export function GraphCanvas(props: Props) {
 
     const onWheel = (ev: WheelEvent) => {
       ev.preventDefault();
+      cancelTracking();
       const rect = canvas.getBoundingClientRect();
       camera.wheelZoom(ev.clientX - rect.left, ev.clientY - rect.top, ev.deltaY, {
         width: rect.width,
@@ -419,6 +488,7 @@ export function GraphCanvas(props: Props) {
     };
 
     const onDblClick = () => {
+      cancelTracking();
       camera.reset();
       sim.reheat(0.3);
     };
@@ -433,7 +503,12 @@ export function GraphCanvas(props: Props) {
         { width: rect.width, height: rect.height }
       );
       const node = nodeAt(wx, wy);
-      if (node) return props.onBookmarkMenu(ev.clientX, ev.clientY, node.id, { x: node.x, y: node.y });
+      if (node) {
+        if (isGroupNode(node)) {
+          return props.onGroupMenu(ev.clientX, ev.clientY, node.groupId ?? node.id);
+        }
+        return props.onBookmarkMenu(ev.clientX, ev.clientY, node.id, { x: node.x, y: node.y });
+      }
       const edge = edgeAt(wx, wy);
       if (edge) return props.onEdgeMenu(ev.clientX, ev.clientY, edge.id);
       props.onCanvasMenu(ev.clientX, ev.clientY);

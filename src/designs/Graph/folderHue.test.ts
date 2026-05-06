@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { folderHue, folderCentroid } from './folderHue';
+import { folderHue, folderCentroid, hueDistance, pickDistinctHue } from './folderHue';
 
 describe('folderHue', () => {
   it('returns a number in [0, 360) for any string', () => {
@@ -16,6 +16,16 @@ describe('folderHue', () => {
     const hues = ['a', 'b', 'c', 'd', 'e'].map(folderHue);
     const unique = new Set(hues);
     expect(unique.size).toBeGreaterThan(1);
+  });
+
+  it('computes circular hue distance', () => {
+    expect(hueDistance(355, 5)).toBe(10);
+    expect(hueDistance(90, 270)).toBe(180);
+  });
+
+  it('picks a hue away from existing group colors', () => {
+    const hue = pickDistinctHue([0]);
+    expect(hueDistance(hue, 0)).toBeGreaterThan(120);
   });
 });
 

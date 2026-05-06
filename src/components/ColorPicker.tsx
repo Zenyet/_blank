@@ -32,7 +32,11 @@ function getEyeDropper(): EyeDropperCtor | null {
  *     containing the palette. Use inline in lists (e.g. Groups rows).
  */
 
-const DEFAULT_PRESETS = [15, 55, 95, 150, 200, 250, 290, 330];
+const DEFAULT_PRESETS = [
+  0, 15, 30, 45, 60, 75, 90, 105,
+  120, 135, 150, 165, 180, 195, 210, 225,
+  240, 255, 270, 285, 300, 315, 330, 345,
+];
 
 const L = 0.74;
 const C = 0.17;

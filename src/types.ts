@@ -22,6 +22,16 @@ export interface Bookmark {
   last: string;
 }
 
+export interface GraphItem extends Bookmark {
+  /** Graph-only node kind. Plain bookmarks omit this in persisted data and are
+   *  treated as bookmark nodes by default. */
+  nodeKind?: 'bookmark' | 'group';
+  /** Real folder id for synthetic group nodes. */
+  groupId?: string;
+  /** Lightweight count shown/used by group nodes. */
+  childCount?: number;
+}
+
 export interface HistoryItem {
   title: string;
   url: string;
@@ -122,7 +132,7 @@ export interface Camera {
   ty: number;
 }
 
-export interface GraphNode extends Bookmark {
+export interface GraphNode extends GraphItem {
   x: number;
   y: number;
   vx: number;

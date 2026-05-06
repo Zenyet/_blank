@@ -3,12 +3,15 @@ import { useEffect, useState } from 'react';
 import type { Group } from '../types';
 import { copy } from '../i18n';
 import { Modal } from './Modal';
+import { GroupSelect } from './GroupSelect';
 
 interface Props {
   open: boolean;
   mode: 'create' | 'edit';
   initial?: { name: string; url: string; groupId: string };
   groups: Group[];
+  looseGroupId?: string | null;
+  hueOverrides?: Record<string, number>;
   defaultGroupId?: string;
   onCancel: () => void;
   onSubmit: (values: { name: string; url: string; groupId: string }) => void;
@@ -19,6 +22,8 @@ export function BookmarkDialog({
   mode,
   initial,
   groups,
+  looseGroupId,
+  hueOverrides,
   defaultGroupId,
   onCancel,
   onSubmit,
@@ -31,8 +36,8 @@ export function BookmarkDialog({
     if (!open) return;
     setName(initial?.name ?? '');
     setUrl(initial?.url ?? '');
-    setGroupId(initial?.groupId ?? defaultGroupId ?? groups[0]?.id ?? '');
-  }, [open, initial, defaultGroupId, groups]);
+    setGroupId(initial?.groupId ?? defaultGroupId ?? looseGroupId ?? groups[0]?.id ?? '');
+  }, [open, initial, defaultGroupId, looseGroupId, groups]);
 
   const valid = url.trim().length > 3 && groupId;
 
@@ -75,17 +80,13 @@ export function BookmarkDialog({
         />
       </Field>
       <Field label={copy.workspace.bookmarkGroup}>
-        <select
+        <GroupSelect
           value={groupId}
-          onChange={(e) => setGroupId(e.target.value)}
-          style={s.input}
-        >
-          {groups.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.label}
-            </option>
-          ))}
-        </select>
+          groups={groups}
+          looseGroupId={looseGroupId}
+          hueOverrides={hueOverrides}
+          onChange={setGroupId}
+        />
       </Field>
       <div style={s.actions}>
         <button onClick={onCancel} style={s.btnGhost}>
@@ -101,10 +102,10 @@ export function BookmarkDialog({
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span style={s.label}>{label}</span>
       {children}
-    </label>
+    </div>
   );
 }
 

@@ -17,7 +17,8 @@ import { folderCentroid, folderHue } from '../folderHue';
 import { Engine, type EngineLink } from './engine';
 import type { GraphSim, SimParams, SimulationLike } from './types';
 
-function radiusFor(visits: number): number {
+function radiusFor(visits: number, kind: GraphNode['nodeKind']): number {
+  if (kind === 'group') return 18 + Math.min(10, Math.sqrt(Math.max(1, visits)) * 1.2);
   return 11 + Math.min(13, Math.sqrt(Math.max(0, visits)) * 0.9);
 }
 
@@ -62,7 +63,8 @@ export function useGraphSimCustom({
     const nodes: GraphNode[] = bookmarks.map((b) => {
       const prior = prev.get(b.id);
       const pin = pins[b.id];
-      const idx = groupIndex.get(b.parentId) ?? 0;
+      const hueKey = b.nodeKind === 'group' ? b.groupId ?? b.parentId : b.parentId;
+      const idx = groupIndex.get(hueKey) ?? groupIndex.get(b.parentId) ?? 0;
       const centroid = folderCentroid(idx, total, radius);
       return {
         ...b,
@@ -72,8 +74,8 @@ export function useGraphSimCustom({
         vy: prior?.vy ?? 0,
         fx: pin?.x ?? null,
         fy: pin?.y ?? null,
-        radius: radiusFor(b.visits),
-        groupHue: hueOverridesRef.current?.[b.parentId] ?? folderHue(b.parentId),
+        radius: radiusFor(b.visits, b.nodeKind),
+        groupHue: hueOverridesRef.current?.[hueKey] ?? folderHue(hueKey),
       };
     });
 

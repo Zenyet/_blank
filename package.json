@@ -1,12 +1,14 @@
 {
-  "name": "new-tab-design-explorations",
+  "name": "bookmark-graph-new-tab",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A Chrome new-tab extension with four distinctive design modes.",
+  "description": "A Chrome new-tab extension that turns bookmarks into an Obsidian-style graph.",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 5174",
     "build": "tsc -b && vite build",
+    "check": "npm run typecheck && npm test && npm run build",
+    "package:extension": "npm run build && node scripts/package-extension.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",

@@ -1,9 +1,10 @@
-import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   Bookmark,
   ChromeData,
   GraphEdge,
+  GraphItem,
   Group,
   PinsMap,
   Settings,
@@ -36,7 +37,7 @@ import {
 } from "../../services/searchProviders";
 import { copy } from "../../i18n";
 import "./graph-hud.css";
-import { folderHue } from "./folderHue";
+import { folderHue, pickDistinctHue } from "./folderHue";
 import { GraphCanvas } from "./GraphCanvas";
 import {
   addEdge as addEdgeFn,
@@ -46,7 +47,6 @@ import {
   saveEdges,
 } from "./edges";
 import { focusNeighborhood as computeFocusNeighborhood } from "./focusNeighborhood";
-import { groupMembers } from "./groupMembers";
 import { cleanOrphanPins, loadPins, savePins, setPin, unsetPin } from "./pins";
 import { suggestRelated } from "./relationSuggest";
 
@@ -54,6 +54,30 @@ interface Props {
   data: ChromeData;
   settings: Settings;
 }
+
+type SearchHit =
+  | {
+      kind: "bookmark";
+      id: string;
+      nodeId: string;
+      name: string;
+      subtitle: string;
+      visits: number;
+      bookmark: Bookmark;
+      previewScopeId: string | null;
+    }
+  | {
+      kind: "group";
+      id: string;
+      nodeId: string;
+      name: string;
+      subtitle: string;
+      visits: number;
+      group: Group;
+      previewScopeId: string | null;
+    };
+
+const groupNodeId = (id: string) => `group:${id}`;
 
 export function Graph({ data, settings }: Props) {
   const [edges, setEdges] = useState<GraphEdge[]>([]);
@@ -65,15 +89,12 @@ export function Graph({ data, settings }: Props) {
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [groupHues, setGroupHues] = useState<Record<string, number>>({});
+  const [scopeGroupId, setScopeGroupId] = useState<string | null>(null);
   // Local-graph focus: when set, the canvas dims everything outside the
   // node's BFS neighborhood (depth 1 over manual edges). Entered via the
   // bookmark right-click menu or Alt+click; exited via ESC, the chip ×,
   // or selecting "退出聚焦" in the menu.
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
-  // Folder-subtree focus: dims the canvas to bookmarks under the selected
-  // group (including descendants). This gives groups a real focus affordance
-  // without stealing the hue swatch's color-picker click target.
-  const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
   const [bmMenu, setBmMenu] = useState<{
     x: number;
     y: number;
@@ -81,6 +102,11 @@ export function Graph({ data, settings }: Props) {
     worldPos: { x: number; y: number };
   } | null>(null);
   const [edgeMenu, setEdgeMenu] = useState<{
+    x: number;
+    y: number;
+    id: string;
+  } | null>(null);
+  const [groupMenu, setGroupMenu] = useState<{
     x: number;
     y: number;
     id: string;
@@ -149,12 +175,12 @@ export function Graph({ data, settings }: Props) {
     }
   }, [data.groups, activeGroupId]);
 
-  // Drop group focus if the focused group was deleted elsewhere.
+  // Return to root if the current scope folder was deleted elsewhere.
   useEffect(() => {
-    if (focusedGroupId && !data.groups.some((g) => g.id === focusedGroupId)) {
-      setFocusedGroupId(null);
+    if (scopeGroupId && !data.groups.some((g) => g.id === scopeGroupId)) {
+      setScopeGroupId(null);
     }
-  }, [data.groups, focusedGroupId]);
+  }, [data.groups, scopeGroupId]);
 
   // Drop focus mode if the focused bookmark was deleted.
   useEffect(() => {
@@ -170,29 +196,24 @@ export function Graph({ data, settings }: Props) {
     return computeFocusNeighborhood(edges, focusedNodeId, 1);
   }, [focusedNodeId, edges]);
 
-  const groupFocusMembers = useMemo(() => {
-    if (!focusedGroupId) return null;
-    return groupMembers(focusedGroupId, data.groups, data.bookmarks);
-  }, [focusedGroupId, data.groups, data.bookmarks]);
-
-  const canvasFocusSet = focusedNodeId ? focusNeighborhood : groupFocusMembers;
-  const canvasFocusKind = focusedNodeId ? "node" : focusedGroupId ? "group" : null;
+  const canvasFocusSet = focusedNodeId ? focusNeighborhood : null;
+  const canvasFocusKind = focusedNodeId ? "node" : null;
 
   const focusedBookmark = useMemo(
     () => (focusedNodeId ? data.bookmarks.find((b) => b.id === focusedNodeId) ?? null : null),
     [focusedNodeId, data.bookmarks]
   );
 
-  const focusedGroup = useMemo(
-    () => (focusedGroupId ? data.groups.find((g) => g.id === focusedGroupId) ?? null : null),
-    [focusedGroupId, data.groups]
+  const scopeGroup = useMemo(
+    () => (scopeGroupId ? data.groups.find((g) => g.id === scopeGroupId) ?? null : null),
+    [scopeGroupId, data.groups]
   );
 
-  const highlightedGroupId = activeGroupId ?? focusedGroupId;
+  const highlightedGroupId = activeGroupId;
   const highlightedGroupMembers = useMemo(() => {
     if (!highlightedGroupId) return null;
-    return groupMembers(highlightedGroupId, data.groups, data.bookmarks);
-  }, [highlightedGroupId, data.groups, data.bookmarks]);
+    return new Set([groupNodeId(highlightedGroupId)]);
+  }, [highlightedGroupId]);
   const highlightedGroupHue =
     highlightedGroupId == null
       ? null
@@ -204,6 +225,12 @@ export function Graph({ data, settings }: Props) {
     () => (focusedBookmark ? suggestRelated(focusedBookmark, data.bookmarks, edges, 4) : []),
     [focusedBookmark, data.bookmarks, edges]
   );
+
+  const closeGroupsDialog = useCallback(() => {
+    setGroupsOpen(false);
+    setInlineCreating(false);
+    setActiveGroupId(null);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -223,10 +250,11 @@ export function Graph({ data, settings }: Props) {
       if (e.key === "Escape") {
         if (bmMenu) setBmMenu(null);
         else if (edgeMenu) setEdgeMenu(null);
+        else if (groupMenu) setGroupMenu(null);
         else if (canvasMenu) setCanvasMenu(null);
-        else if (groupsOpen) setGroupsOpen(false);
+        else if (groupsOpen) closeGroupsDialog();
         else if (focusedNodeId) setFocusedNodeId(null);
-        else if (focusedGroupId) setFocusedGroupId(null);
+        else if (scopeGroupId) setScopeGroupId(null);
         else if (typing) {
           (document.activeElement as HTMLElement).blur();
           setFilter("");
@@ -235,7 +263,7 @@ export function Graph({ data, settings }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [bmMenu, edgeMenu, canvasMenu, groupsOpen, focusedNodeId, focusedGroupId]);
+  }, [bmMenu, edgeMenu, groupMenu, canvasMenu, groupsOpen, closeGroupsDialog, focusedNodeId, scopeGroupId]);
 
   const onRequestEdge = (fromId: string, toId: string) => {
     const next = addEdgeFn(edges, fromId, toId);
@@ -274,7 +302,6 @@ export function Graph({ data, settings }: Props) {
       {
         label: isFocused ? "退出聚焦" : "聚焦此节点",
         onClick: () => {
-          setFocusedGroupId(null);
           setFocusedNodeId(isFocused ? null : id);
         },
       },
@@ -286,6 +313,42 @@ export function Graph({ data, settings }: Props) {
         label: copy.workspace.deleteBookmark,
         danger: true,
         onClick: () => void removeBookmark(id),
+      },
+    ];
+  };
+
+  const buildGroupMenu = (id: string): MenuItem[] => {
+    const g = data.groups.find((x) => x.id === id);
+    if (!g) return [];
+    return [
+      {
+        label: `进入“${g.label}”`,
+        onClick: () => {
+          setFocusedNodeId(null);
+          setScopeGroupId(id);
+        },
+      },
+      {
+        label: "+ " + copy.workspace.addBookmark,
+        onClick: () => {
+          setScopeGroupId(id);
+          setAdding(true);
+        },
+      },
+      {
+        label: "+ " + copy.workspace.newFolder,
+        onClick: () => {
+          setScopeGroupId(id);
+          setGroupsOpen(true);
+          setInlineCreating(true);
+        },
+      },
+      {
+        label: "分组管理…",
+        onClick: () => {
+          setScopeGroupId(id);
+          setGroupsOpen(true);
+        },
       },
     ];
   };
@@ -305,6 +368,7 @@ export function Graph({ data, settings }: Props) {
   };
 
   const buildCanvasMenu = (): MenuItem[] => {
+    const parentId = scopeGroupId ?? data.barId;
     return [
       {
         label: "+ " + copy.workspace.addBookmark,
@@ -312,10 +376,8 @@ export function Graph({ data, settings }: Props) {
       },
       {
         label: "+ " + copy.workspace.newFolder,
-        disabled: !data.barId,
+        disabled: !parentId,
         onClick: () => {
-          // Same right-click affordance as before, but the editor lives in
-          // the panel now — open it and prime its inline create row.
           setGroupsOpen(true);
           setInlineCreating(true);
         },
@@ -330,16 +392,14 @@ export function Graph({ data, settings }: Props) {
   // Pre-pick a pleasant hue that isn't already used by any existing folder
   // so the inline-create swatch reads as "fresh" the moment it appears.
   const nextHue = useMemo(() => {
-    const used = new Set(
-      data.groups.map((g) => Math.round(groupHues[g.id] ?? folderHue(g.id))),
-    );
-    const options = [200, 330, 150, 55, 290, 95, 15, 250];
-    return options.find((h) => !used.has(h)) ?? 200;
+    const used = data.groups.map((g) => groupHues[g.id] ?? folderHue(g.id));
+    return pickDistinctHue(used);
   }, [data.groups, groupHues]);
 
   const handleCommitCreate = async (name: string) => {
-    if (!data.barId) return;
-    const newId = await createFolder(data.barId, name);
+    const parentId = scopeGroupId ?? data.barId;
+    if (!parentId) return;
+    const newId = await createFolder(parentId, name);
     // If the auto-picked hue differs from the hash-derived default, persist
     // it so the new group inherits its preselected color.
     if (newId && Math.round(nextHue) !== folderHue(newId)) {
@@ -350,69 +410,114 @@ export function Graph({ data, settings }: Props) {
 
   const setGroupFocus = (id: string | null) => {
     setFocusedNodeId(null);
-    setFocusedGroupId(id);
+    setScopeGroupId(id);
   };
 
   const filterQuery = filter.trim().toLowerCase();
 
-  // Pre-build a `id → lowercased haystack` map once per bookmarks change.
-  // Keeps filter evaluation to a single cheap `.includes` per bookmark
-  // instead of re-concatenating and re-lowercasing on every keystroke.
-  const haystacks = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const b of data.bookmarks) {
-      map.set(b.id, `${b.name} ${b.url} ${b.group}`.toLowerCase());
-    }
-    return map;
-  }, [data.bookmarks]);
+  const scopeForParentId = (parentId: string): string | null =>
+    parentId === data.barId ? null : parentId;
 
-  // Single memoized source of truth for filter results — consumers get
-  // either the Set (O(1) membership for the renderer) or the list (for UI
-  // counts, sorting, focus detection). Only recomputes when the query or
-  // the bookmarks list changes, not on every unrelated re-render.
-  const { matchSet, matchList } = useMemo(() => {
-    if (!filterQuery)
-      return {
-        matchSet: null as Set<string> | null,
-        matchList: [] as Bookmark[],
-      };
-    const set = new Set<string>();
-    const list: Bookmark[] = [];
-    for (const b of data.bookmarks) {
-      const hay = haystacks.get(b.id);
-      if (hay && hay.includes(filterQuery)) {
-        set.add(b.id);
-        list.push(b);
+  const childCountForGroup = (id: string): number => {
+    const directBookmarks = data.bookmarks.filter((b) => b.parentId === id).length;
+    const childGroups = data.groups.filter((g) => g.parentGroupId === id).length;
+    return directBookmarks + childGroups;
+  };
+
+  const toGroupNode = (g: Group): GraphItem => {
+    const hue = groupHues[g.id] ?? folderHue(g.id);
+    const count = childCountForGroup(g.id);
+    return {
+      id: groupNodeId(g.id),
+      parentId: g.id,
+      nodeKind: "group",
+      groupId: g.id,
+      childCount: count,
+      name: g.label,
+      url: `newtab://group/${g.id}`,
+      group: scopeGroup?.label ?? "首页",
+      color: `oklch(0.56 0.13 ${hue})`,
+      letter: g.label.trim().slice(0, 2) || "组",
+      visits: Math.max(1, count),
+      last: `${count}`,
+    };
+  };
+
+  const searchHits = useMemo<SearchHit[]>(() => {
+    if (!filterQuery) return [];
+    const hits: SearchHit[] = [];
+    for (const g of data.groups) {
+      if (g.id === data.barId) continue;
+      const hay = `${g.label}`.toLowerCase();
+      if (hay.includes(filterQuery)) {
+        hits.push({
+          kind: "group",
+          id: groupNodeId(g.id),
+          nodeId: groupNodeId(g.id),
+          name: g.label,
+          subtitle: "分组",
+          visits: childCountForGroup(g.id),
+          group: g,
+          previewScopeId: g.parentGroupId,
+        });
       }
     }
-    return { matchSet: set, matchList: list };
-  }, [filterQuery, data.bookmarks, haystacks]);
+    for (const b of data.bookmarks) {
+      const hay = `${b.name} ${b.url} ${b.group}`.toLowerCase();
+      if (hay.includes(filterQuery)) {
+        hits.push({
+          kind: "bookmark",
+          id: b.id,
+          nodeId: b.id,
+          name: b.name,
+          subtitle: domainOf(b.url),
+          visits: b.visits,
+          bookmark: b,
+          previewScopeId: scopeForParentId(b.parentId),
+        });
+      }
+    }
+    return hits.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === "group" ? -1 : 1;
+      return b.visits - a.visits;
+    });
+  }, [filterQuery, data.groups, data.bookmarks, data.barId, groupHues]);
 
-  // Sort matches by visit count so the "best" bookmark surfaces at the top
-  // of the command-palette dropdown and becomes the default selection.
-  const rankedMatches = useMemo(
-    () => [...matchList].sort((a, b) => b.visits - a.visits),
-    [matchList]
-  );
   const MAX_RESULTS = 8;
-  const visibleMatches = rankedMatches.slice(0, MAX_RESULTS);
+  const visibleMatches = searchHits.slice(0, MAX_RESULTS);
 
   const [selectedIdx, setSelectedIdx] = useState(0);
   useEffect(() => {
     setSelectedIdx(0);
   }, [filterQuery]);
 
-  const selectedMatch =
+  const selectedHit =
     visibleMatches.length > 0
       ? visibleMatches[Math.min(selectedIdx, visibleMatches.length - 1)] ?? null
       : null;
   const fallbackSearchProvider = getSearchProvider(settings);
 
-  // Camera follows the currently-selected dropdown row. Typing narrows the
-  // list (selected defaults to the top-ranked match) and arrow keys move
-  // the camera across candidates, tying the command palette to the graph.
-  // The canvas dedupes by id, so repeat selections don't re-animate.
-  const focusMatch = selectedMatch;
+  const effectiveScopeGroupId =
+    filterQuery && selectedHit ? selectedHit.previewScopeId : scopeGroupId;
+  const visibleGraphItems = useMemo<GraphItem[]>(() => {
+    const childGroups = data.groups
+      .filter((g) => g.id !== data.barId && g.parentGroupId === effectiveScopeGroupId)
+      .map(toGroupNode);
+    const parentId = effectiveScopeGroupId ?? data.barId;
+    const looseBookmarks = parentId
+      ? data.bookmarks
+          .filter((b) => b.parentId === parentId)
+          .map((b) => ({ ...b, nodeKind: "bookmark" as const }))
+      : [];
+    return [...childGroups, ...looseBookmarks];
+  }, [data.groups, data.bookmarks, data.barId, effectiveScopeGroupId, groupHues]);
+
+  const matchSet = useMemo(
+    () => (filterQuery ? new Set(searchHits.map((h) => h.nodeId)) : null),
+    [filterQuery, searchHits]
+  );
+
+  const focusMatchId = selectedHit?.nodeId ?? null;
 
   const resultsListRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -427,8 +532,15 @@ export function Graph({ data, settings }: Props) {
       list.scrollTop = bot - list.clientHeight;
   }, [selectedIdx]);
 
-  const openMatch = (bm: Bookmark) => {
-    openUrl(bm.url, settings.openInNewTab);
+  const openMatch = (hit: SearchHit) => {
+    setScopeGroupId(hit.previewScopeId);
+    if (hit.kind === "group") {
+      setScopeGroupId(hit.group.id);
+      setFocusedNodeId(null);
+    } else {
+      setFocusedNodeId(hit.bookmark.id);
+      openUrl(hit.bookmark.url, settings.openInNewTab);
+    }
     setFilter("");
     filterRef.current?.focus();
   };
@@ -444,7 +556,7 @@ export function Graph({ data, settings }: Props) {
     if (!filterQuery) return;
     if (e.key === "Enter") {
       e.preventDefault();
-      if (selectedMatch) openMatch(selectedMatch);
+      if (selectedHit) openMatch(selectedHit);
       else openSearchFallback();
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -462,16 +574,16 @@ export function Graph({ data, settings }: Props) {
   return (
     <div style={styles.root}>
       <GraphCanvas
-        bookmarks={data.bookmarks}
+        bookmarks={visibleGraphItems}
         groups={data.groups as Group[]}
         edges={edges}
         pins={pins}
         filterText={filter}
         filterMatches={matchSet}
-        focusBookmarkId={focusedNodeId ?? (focusedGroupId ? null : focusMatch?.id ?? null)}
-        focusNeighborhood={canvasFocusSet}
-        focusKind={canvasFocusKind}
-        focusGroupId={focusedGroupId}
+        focusBookmarkId={focusMatchId ?? focusedNodeId}
+        focusNeighborhood={filterQuery ? null : canvasFocusSet}
+        focusKind={filterQuery ? null : canvasFocusKind}
+        focusGroupId={null}
         highlightGroupId={highlightedGroupId}
         highlightGroupMembers={highlightedGroupMembers}
         highlightGroupHue={highlightedGroupHue}
@@ -482,13 +594,18 @@ export function Graph({ data, settings }: Props) {
           const bm = data.bookmarks.find((b) => b.id === id);
           if (bm) openUrl(bm.url, settings.openInNewTab);
         }}
+        onOpenGroup={(id) => {
+          setFocusedNodeId(null);
+          setFilter("");
+          setScopeGroupId(id);
+        }}
         onBookmarkMenu={(x, y, id, worldPos) =>
           setBmMenu({ x, y, id, worldPos })
         }
+        onGroupMenu={(x, y, id) => setGroupMenu({ x, y, id })}
         onEdgeMenu={(x, y, id) => setEdgeMenu({ x, y, id })}
         onCanvasMenu={(x, y) => setCanvasMenu({ x, y })}
         onFocusNode={(id) => {
-          setFocusedGroupId(null);
           setFocusedNodeId(id);
         }}
       />
@@ -561,22 +678,6 @@ export function Graph({ data, settings }: Props) {
               </span>
             </div>
           </div>
-
-          <div className="graph-toolbar-sep" aria-hidden />
-
-          <ToolButton
-            title={copy.workspace.addBookmark}
-            onClick={() => setAdding(true)}
-          >
-            <PlusIcon />
-          </ToolButton>
-          <ToolButton
-            title="分组管理"
-            active={groupsOpen}
-            onClick={() => setGroupsOpen((v) => !v)}
-          >
-            <FolderIcon />
-          </ToolButton>
         </div>
 
         {focusedBookmark && (
@@ -613,35 +714,38 @@ export function Graph({ data, settings }: Props) {
           </div>
         )}
 
-        {focusedGroup && (
+        {scopeGroup && (
           <div
             className="graph-focus-chip graph-focus-chip--group"
             role="status"
             aria-live="polite"
           >
-            <span className="graph-focus-chip__label">分组聚焦</span>
+            <span className="graph-focus-chip__label">当前分组</span>
             <span
               className="graph-focus-chip__swatch"
-              style={{ background: `oklch(0.62 0.15 ${groupHues[focusedGroup.id] ?? folderHue(focusedGroup.id)})` }}
+              style={{ background: `oklch(0.62 0.15 ${groupHues[scopeGroup.id] ?? folderHue(scopeGroup.id)})` }}
               aria-hidden
             />
-            <span className="graph-focus-chip__name" title={focusedGroup.label}>
-              {focusedGroup.label}
+            <span className="graph-focus-chip__name" title={scopeGroup.label}>
+              {scopeGroup.label}
             </span>
             <span
               className="graph-focus-chip__count"
-              title="分组内书签数（含子分组）"
+              title="当前层级内的节点数"
             >
-              {groupFocusMembers?.size ?? 0}
+              {visibleGraphItems.length}
             </span>
             <button
               type="button"
               className="graph-focus-chip__close"
-              onClick={() => setFocusedGroupId(null)}
-              aria-label="退出分组聚焦"
-              title="退出分组聚焦 (Esc)"
+              onClick={() => {
+                setFocusedNodeId(null);
+                setScopeGroupId(scopeGroup.parentGroupId);
+              }}
+              aria-label="返回上一级"
+              title="返回上一级 (Esc)"
             >
-              <ClearSearchIcon />
+              <ChevronLeftIcon />
             </button>
           </div>
         )}
@@ -680,26 +784,40 @@ export function Graph({ data, settings }: Props) {
               onMouseDown={(e) => e.preventDefault()}
             >
               {visibleMatches.length > 0 ? (
-                visibleMatches.map((b, i) => (
+                visibleMatches.map((hit, i) => (
                   <button
-                    key={b.id}
+                    key={hit.id}
                     type="button"
                     role="option"
                     aria-selected={i === selectedIdx}
                     className="graph-results-item"
                     onMouseEnter={() => setSelectedIdx(i)}
-                    onClick={() => openMatch(b)}
+                    onClick={() => openMatch(hit)}
                   >
-                    <Favicon
-                      bookmark={b}
-                      size={24}
-                      fontSize={11}
-                      radius={6}
-                    />
+                    {hit.kind === "bookmark" ? (
+                      <Favicon
+                        bookmark={hit.bookmark}
+                        size={24}
+                        fontSize={11}
+                        radius={6}
+                      />
+                    ) : (
+                      <span
+                        className="graph-results-groupmark"
+                        style={{
+                          background: `oklch(0.62 0.15 ${
+                            groupHues[hit.group.id] ?? folderHue(hit.group.id)
+                          })`,
+                        }}
+                        aria-hidden
+                      >
+                        {hit.group.label.trim().slice(0, 1) || "组"}
+                      </span>
+                    )}
                     <span className="graph-results-body">
-                      <HighlightedName text={b.name} query={filterQuery} />
+                      <HighlightedName text={hit.name} query={filterQuery} />
                       <span className="graph-results-domain">
-                        {domainOf(b.url)}
+                        {hit.subtitle}
                       </span>
                     </span>
                     <span className="graph-results-enterhint" aria-hidden>
@@ -845,6 +963,14 @@ export function Graph({ data, settings }: Props) {
           onClose={() => setEdgeMenu(null)}
         />
       )}
+      {groupMenu && (
+        <ContextMenu
+          x={groupMenu.x}
+          y={groupMenu.y}
+          items={buildGroupMenu(groupMenu.id)}
+          onClose={() => setGroupMenu(null)}
+        />
+      )}
       {canvasMenu && (
         <ContextMenu
           x={canvasMenu.x}
@@ -853,12 +979,13 @@ export function Graph({ data, settings }: Props) {
           onClose={() => setCanvasMenu(null)}
         />
       )}
-
       <BookmarkDialog
         open={adding}
         mode="create"
         groups={data.groups}
-        defaultGroupId={data.groups[0]?.id}
+        looseGroupId={data.barId}
+        hueOverrides={groupHues}
+        defaultGroupId={scopeGroupId ?? data.barId ?? data.groups[0]?.id}
         onCancel={() => setAdding(false)}
         onSubmit={async ({ name, url, groupId }) => {
           setAdding(false);
@@ -879,6 +1006,8 @@ export function Graph({ data, settings }: Props) {
             : undefined
         }
         groups={data.groups}
+        looseGroupId={data.barId}
+        hueOverrides={groupHues}
         onCancel={() => setEditing(null)}
         onSubmit={async ({ name, url, groupId }) => {
           if (!editing) return;
@@ -891,29 +1020,62 @@ export function Graph({ data, settings }: Props) {
         }}
       />
 
-      <div
-        className={
-          groupsOpen
-            ? "graph-groups-dock graph-groups-dock--open"
-            : "graph-groups-dock graph-groups-dock--rail"
-        }
-      >
-        {groupsOpen ? (
-          <div className="graph-groups-panel">
+      {groupsOpen && (
+        <div
+          className="graph-groups-dialog-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeGroupsDialog();
+          }}
+        >
+          <section
+            className="graph-groups-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="graph-groups-dialog-title"
+          >
             <div className="graph-groups-panel__head">
-              <span className="graph-groups-panel__title">分组管理</span>
+              <span
+                id="graph-groups-dialog-title"
+                className="graph-groups-panel__title"
+              >
+                分组管理
+              </span>
               <span className="graph-groups-panel__count">
                 {data.groups.length} 个分组
               </span>
               <button
                 type="button"
-                onClick={() => setGroupsOpen(false)}
+                onClick={closeGroupsDialog}
                 className="graph-groups-panel__collapse"
-                aria-label="折叠分组面板"
-                title="折叠"
+                aria-label="关闭分组管理"
+                title="关闭"
               >
-                <ChevronRightIcon />
+                <ClearSearchIcon />
               </button>
+            </div>
+            <div className="graph-groups-panel__tools">
+              <button
+                type="button"
+                className="graph-groups-panel__tool"
+                onClick={() => {
+                  closeGroupsDialog();
+                  setAdding(true);
+                }}
+              >
+                + {copy.workspace.addBookmark}
+              </button>
+              <button
+                type="button"
+                className="graph-groups-panel__tool"
+                disabled={!data.barId}
+                onClick={() => setInlineCreating(true)}
+                title={!data.barId ? '没有可用的书签栏根，无法创建' : ''}
+              >
+                + {copy.workspace.newFolder}
+              </button>
+              <span className="graph-groups-panel__scope">
+                {scopeGroup ? scopeGroup.label : '首页'}
+              </span>
             </div>
             <div className="graph-groups-panel__body">
               <GroupsPanel
@@ -921,7 +1083,7 @@ export function Graph({ data, settings }: Props) {
                 bookmarks={data.bookmarks}
                 protectedId={data.barId}
                 hueOverrides={groupHues}
-                focusedId={focusedGroupId}
+                focusedId={scopeGroupId}
                 onActiveChange={setActiveGroupId}
                 onFocusChange={setGroupFocus}
                 onRename={(id, next) => void renameFolder(id, next)}
@@ -935,113 +1097,14 @@ export function Graph({ data, settings }: Props) {
                 nextHue={nextHue}
               />
             </div>
-          </div>
-        ) : (
-          <div className="graph-groups-rail" aria-label="分组管理">
-            <button
-              type="button"
-              className="graph-groups-rail__main"
-              onClick={() => setGroupsOpen(true)}
-              aria-label="展开分组面板"
-              title="展开分组面板"
-            >
-              <FolderIcon />
-              <span className="graph-groups-rail__badge">{data.groups.length}</span>
-            </button>
-            {focusedGroup && (
-              <button
-                type="button"
-                className="graph-groups-rail__focus"
-                onClick={() => setFocusedGroupId(null)}
-                aria-label={`退出分组聚焦：${focusedGroup.label}`}
-                title={`退出分组聚焦：${focusedGroup.label}`}
-              >
-                <span
-                  className="graph-groups-rail__swatch"
-                  style={{
-                    background: `oklch(0.62 0.15 ${
-                      groupHues[focusedGroup.id] ?? folderHue(focusedGroup.id)
-                    })`,
-                  }}
-                  aria-hidden
-                />
-                <span className="graph-groups-rail__mini-count">
-                  {groupFocusMembers?.size ?? 0}
-                </span>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
 
-interface ToolButtonProps {
-  title: string;
-  active?: boolean;
-  badge?: number;
-  onClick: () => void;
-  children: ReactNode;
-}
-
-function ToolButton({
-  title,
-  active,
-  badge,
-  onClick,
-  children,
-}: ToolButtonProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      aria-label={title}
-      className={
-        active ? "graph-tool-btn graph-tool-btn--active" : "graph-tool-btn"
-      }
-    >
-      {children}
-      {badge != null && <span className="graph-tool-badge">{badge}</span>}
-    </button>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-    >
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
-
-function FolderIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-    </svg>
-  );
-}
-
-function ChevronRightIcon() {
+function ChevronLeftIcon() {
   return (
     <svg
       width="14"
@@ -1054,7 +1117,7 @@ function ChevronRightIcon() {
       strokeLinejoin="round"
       aria-hidden
     >
-      <path d="m9 18 6-6-6-6" />
+      <path d="m15 18-6-6 6-6" />
     </svg>
   );
 }

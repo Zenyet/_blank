@@ -221,19 +221,29 @@ function drawNodes(
     const isHover = state.hoverNodeId === n.id;
     const isDragging = state.draggingId === n.id;
     const isPinned = Object.prototype.hasOwnProperty.call(state.pins, n.id);
+    const isGroup = n.nodeKind === 'group';
 
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = n.color;
+    ctx.fillStyle = isGroup ? hueString(n.groupHue, 56, 0.13) : n.color;
     ctx.beginPath();
     ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
     ctx.fill();
 
     // Group hue ring.
     ctx.strokeStyle = hueString(n.groupHue, isHover || isDragging ? 82 : 62);
-    ctx.lineWidth = isHover || isDragging ? 2.5 : 1.2;
+    ctx.lineWidth = isGroup ? (isHover || isDragging ? 3 : 2) : isHover || isDragging ? 2.5 : 1.2;
     ctx.stroke();
 
-    if (isPinned) {
+    if (isGroup) {
+      ctx.globalAlpha = alpha * 0.34;
+      ctx.strokeStyle = hueString(n.groupHue, 88, 0.12);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, Math.max(4, n.radius - 6), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (isPinned && !isGroup) {
       ctx.fillStyle = hueString(n.groupHue, 88, 0.18);
       ctx.beginPath();
       const px = n.x + n.radius * 0.7;
@@ -248,13 +258,13 @@ function drawNodes(
     // Center letter monogram.
     ctx.globalAlpha = alpha;
     ctx.fillStyle = '#fff';
-    ctx.font = `600 ${Math.round(n.radius * 0.72)}px var(--font-mono, monospace)`;
+    ctx.font = `600 ${Math.round(n.radius * (isGroup ? 0.56 : 0.72))}px var(--font-mono, monospace)`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(n.letter, n.x, n.y + 1);
 
     // Favicon overlay if loaded — draws on top of letter, same size as radius.
-    const img = state.favicons.get(n.url);
+    const img = isGroup ? null : state.favicons.get(n.url);
     if (img) {
       const s = n.radius * 1.1;
       ctx.save();
@@ -275,28 +285,49 @@ function drawLabels(
   state: RenderState,
   theme: Theme
 ): void {
-  ctx.font = '12px var(--font-sans, sans-serif)';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
   for (const n of state.nodes) {
-    const isHover = state.hoverNodeId === n.id;
-    const isMatch = state.filterMatches?.has(n.id) ?? false;
-    const isPinned = Object.prototype.hasOwnProperty.call(state.pins, n.id);
-    const isFocus =
-      state.focusKind === 'node' && (state.focusNeighborhood?.has(n.id) ?? false);
-    if (!isHover && !isMatch && !isPinned && !isFocus) continue;
+    const isGroup = n.nodeKind === 'group';
+    const alpha = alphaFor(n.id, state.filterMatches, state.focusNeighborhood);
+    const maxWidth = isGroup ? 140 : 170;
+    const y = n.y + n.radius + 4;
+
+    ctx.globalAlpha = Math.max(alpha, isGroup ? 0.7 : 0.38);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+
+    ctx.font = `${isGroup ? 600 : 500} 12px var(--font-sans, sans-serif)`;
     ctx.fillStyle = theme.fg;
-    ctx.fillText(n.name, n.x, n.y + n.radius + 4);
-    if (isHover) {
-      ctx.fillStyle = theme.fgMuted;
+    ctx.fillText(ellipsize(ctx, n.name, maxWidth), n.x, y);
+
+    if (!isGroup) {
+      ctx.globalAlpha = alpha >= 0.5 ? alpha * 0.66 : alpha * 0.82;
       ctx.font = '10px var(--font-mono, monospace)';
-      try {
-        const host = new URL(n.url).hostname.replace(/^www\./, '');
-        ctx.fillText(host, n.x, n.y + n.radius + 20);
-      } catch {
-        /* ignore malformed urls */
-      }
-      ctx.font = '12px var(--font-sans, sans-serif)';
+      ctx.fillStyle = theme.fg;
+      ctx.fillText(ellipsize(ctx, displayUrl(n.url), maxWidth), n.x, y + 15);
     }
   }
+  ctx.globalAlpha = 1;
+}
+
+function displayUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '');
+    const path = u.pathname === '/' ? '' : u.pathname.replace(/\/$/, '');
+    return `${host}${path}`;
+  } catch {
+    return url;
+  }
+}
+
+function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.measureText(`${text.slice(0, mid)}…`).width <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  return `${text.slice(0, lo)}…`;
 }

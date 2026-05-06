@@ -364,8 +364,8 @@ export function GroupsPanel({
                     onFocusChange(isFocused ? null : g.id);
                   }}
                   className="groups-row__icon-btn groups-row__icon-btn--focus"
-                  title={isFocused ? '退出分组聚焦' : '聚焦分组'}
-                  aria-label={isFocused ? '退出分组聚焦' : '聚焦分组'}
+                  title={isFocused ? '返回首页' : '进入分组'}
+                  aria-label={isFocused ? '返回首页' : '进入分组'}
                   aria-pressed={isFocused}
                 >
                   <FocusIcon />
