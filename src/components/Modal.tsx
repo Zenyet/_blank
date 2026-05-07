@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect } from 'react';
+import { CloseIcon } from './CloseIcon';
 
 interface Props {
   open: boolean;
@@ -7,9 +8,10 @@ interface Props {
   title: string;
   children: ReactNode;
   width?: number;
+  allowOverflow?: boolean;
 }
 
-export function Modal({ open, onClose, title, children, width = 420 }: Props) {
+export function Modal({ open, onClose, title, children, width = 420, allowOverflow = false }: Props) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -23,11 +25,19 @@ export function Modal({ open, onClose, title, children, width = 420 }: Props) {
 
   return (
     <div style={s.overlay} onClick={onClose}>
-      <div style={{ ...s.modal, width }} onClick={(e) => e.stopPropagation()}>
+      <div
+        style={{ ...s.modal, width, overflow: allowOverflow ? 'visible' : 'hidden' }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div style={s.head}>
           <span style={s.title}>{title}</span>
-          <button onClick={onClose} style={s.close} aria-label="关闭">
-            ×
+          <button
+            type="button"
+            onClick={onClose}
+            className="ui-close-button modal-close"
+            aria-label="关闭"
+          >
+            <CloseIcon />
           </button>
         </div>
         <div style={s.body}>{children}</div>
@@ -64,16 +74,5 @@ const s: Record<string, CSSProperties> = {
     borderBottom: '1px solid var(--line-soft)',
   },
   title: { fontSize: 14, fontWeight: 500, color: 'var(--fg)' },
-  close: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    color: 'var(--fg-2)',
-    fontSize: 18,
-    lineHeight: 1,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   body: { padding: 16, display: 'flex', flexDirection: 'column', gap: 12 },
 };

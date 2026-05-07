@@ -62,31 +62,33 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--line-soft);
-  background: var(--bg-2);
+  border: 1px solid var(--ui-control-border);
+  background: var(--ui-control-bg);
   flex-shrink: 0;
   transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
 }
 
 .groups-row__icon-btn:hover {
   color: var(--fg);
-  border-color: var(--line);
+  background: var(--ui-control-bg-hover);
+  border-color: var(--ui-control-border-hover);
 }
 
 .groups-row__icon-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ui-outline);
   outline-offset: 1px;
 }
 
 .groups-row__icon-btn--focus[aria-pressed="true"] {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: color-mix(in oklch, var(--accent) 45%, var(--line));
+  color: var(--fg);
+  background: var(--ui-control-bg-active);
+  border-color: var(--ui-control-border-hover);
 }
 
 .groups-row__icon-btn--danger:hover {
-  color: var(--warn);
-  border-color: color-mix(in oklch, var(--warn) 50%, var(--line));
+  color: var(--fg);
+  background: var(--ui-control-bg-hover);
+  border-color: var(--ui-control-border-hover);
 }
 
 .groups-row__label {
@@ -109,8 +111,8 @@
    instead of a label. Auto-picked hue swatch sits in the same slot as the
    regular HuePickerButton so the row width doesn't jitter. */
 .groups-row--creating {
-  border-color: color-mix(in oklch, var(--accent) 38%, var(--line));
-  background: color-mix(in oklch, var(--accent) 8%, transparent);
+  border-color: var(--ui-control-border-hover);
+  background: var(--ui-control-bg-hover);
 }
 
 .groups-row__create-input {
@@ -153,7 +155,7 @@
 }
 
 .groups-new-btn:hover:not(:disabled) {
-  color: var(--fg-1);
+  color: var(--fg);
 }
 
 .groups-new-btn:disabled {

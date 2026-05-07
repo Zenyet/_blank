@@ -287,26 +287,26 @@ export function GroupsPanel({
               paddingLeft: 8 + g.depth * 14,
               background:
                 indicator === 'inside'
-                  ? `oklch(0.62 0.15 ${hue} / 0.18)`
+                  ? 'var(--ui-control-bg-hover)'
                   : isActiveRow
-                    ? 'var(--bg-2)'
+                    ? 'var(--ui-control-bg-hover)'
                     : 'transparent',
               borderColor:
                 indicator === 'inside'
-                  ? `oklch(0.62 0.15 ${hue} / 0.6)`
+                  ? 'var(--ui-control-border-hover)'
                   : isFocused
-                    ? `oklch(0.62 0.15 ${hue} / 0.62)`
+                    ? 'var(--ui-control-border-hover)'
                   : isPinned
-                    ? `oklch(0.62 0.15 ${hue} / 0.55)`
+                    ? 'var(--ui-control-border-hover)'
                     : isHovered
-                      ? `oklch(0.62 0.15 ${hue} / 0.32)`
+                      ? 'var(--ui-control-border)'
                       : 'transparent',
               opacity: isDragging ? 0.4 : 1,
               boxShadow:
                 indicator === 'before'
-                  ? 'inset 0 2px 0 var(--accent)'
+                  ? 'inset 0 2px 0 var(--fg)'
                   : indicator === 'after'
-                    ? 'inset 0 -2px 0 var(--accent)'
+                    ? 'inset 0 -2px 0 var(--fg)'
                     : undefined,
               cursor: isProtected ? 'default' : 'grab',
             }}

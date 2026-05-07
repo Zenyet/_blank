@@ -51,7 +51,8 @@ export interface Quote {
   by: string;
 }
 
-export type Theme = 'dark' | 'light';
+export type ResolvedTheme = 'dark' | 'light';
+export type Theme = ResolvedTheme | 'system';
 export type Density = 'cozy' | 'compact';
 export type BgPattern = 'flat' | 'grain' | 'grid' | 'image';
 export type SearchProviderId =

@@ -104,7 +104,8 @@ export const copy = {
   },
 
   constellation: {
-    filterPlaceholder: '过滤图…',
+    searchLauncher: '搜索书签',
+    filterPlaceholder: '输入以搜索书签或访问 Web',
     matchCount: (n: number) => `${n} 项匹配`,
     siteCount: (n: number) => `${n} 个站点`,
     sizeLegend: '节点颜色 = 所属分组',
@@ -121,7 +122,7 @@ export const copy = {
     sectionBehavior: '行为',
     sectionSearch: '搜索',
     theme: '主题',
-    themes: { dark: '深色', light: '浅色' },
+    themes: { system: '系统', dark: '深色', light: '浅色' },
     accent: '色调',
     density: '密度',
     densities: { cozy: '宽松', compact: '紧凑' },
@@ -142,7 +143,6 @@ export const copy = {
     bgImageTitle: '自定义背景图',
     bgImageUpload: '上传图片',
     bgImageUrl: '或填入图片链接',
-    bgImageDim: '遮罩强度',
     bgImageRemove: '移除图片',
     bgImageTooLarge: '图片太大，请换一张（上限约 3MB）',
   },

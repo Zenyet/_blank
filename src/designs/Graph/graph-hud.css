@@ -1,8 +1,10 @@
-/* Positioning wrapper — toolbar + results panel stack here so they
-   share one horizontal centerline and animate together. */
+.graph-hud-wrap,
+.graph-search-overlay {
+  --graph-hud-panel-width: min(520px, calc(100vw - 40px));
+}
+
+/* Top graph state chips. Search is intentionally absent until typing begins. */
 .graph-hud-wrap {
-  --graph-hud-panel-width: min(480px, calc(100vw - 40px));
-  --graph-hud-compact-width: min(300px, calc(100vw - 40px));
   position: absolute;
   top: 14px;
   left: 50%;
@@ -20,15 +22,101 @@
   pointer-events: auto;
 }
 
-/* Single-shell HUD — the toolbar IS the search container. The inner
-   `.graph-search-field` is a transparent flex slot, not a second pill. */
+.graph-search-launcher {
+  position: fixed;
+  top: 64px;
+  right: 20px;
+  z-index: 98;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--fg-2);
+  background: var(--ui-control-bg);
+  border: 1px solid var(--ui-control-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md);
+  transition:
+    border-color 0.14s ease,
+    background 0.14s ease,
+    color 0.14s ease,
+    transform 0.14s ease;
+}
+
+.graph-search-launcher:hover {
+  color: var(--fg);
+  background: var(--ui-control-bg-hover);
+  border-color: var(--ui-control-border-hover);
+  transform: translateY(-1px);
+}
+
+.graph-search-launcher:focus-visible {
+  outline: 2px solid var(--ui-outline);
+  outline-offset: 2px;
+}
+
+.graph-search-launcher__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.graph-search-launcher__label {
+  display: none;
+}
+
+/* Centered type-to-search layer. */
+.graph-search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: oklch(0 0 0 / 0.18);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  animation: graph-search-backdrop-in 130ms ease;
+}
+
+.graph-search-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: var(--graph-hud-panel-width);
+  max-height: min(560px, calc(100vh - 48px));
+  animation: graph-search-popover-in 170ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes graph-search-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes graph-search-popover-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Single-shell search field. The inner wrapper is a transparent flex slot. */
 .graph-floating-toolbar {
   display: flex;
   align-items: center;
   gap: 2px;
-  width: var(--graph-hud-compact-width);
+  width: var(--graph-hud-panel-width);
   padding: 4px;
-  background: color-mix(in oklch, var(--bg-1) 72%, transparent);
+  background: var(--ui-panel);
   -webkit-backdrop-filter: blur(14px) saturate(160%);
   backdrop-filter: blur(14px) saturate(160%);
   border: 1px solid var(--line);
@@ -37,7 +125,6 @@
   box-sizing: border-box;
   max-width: 100%;
   transition:
-    width 0.26s cubic-bezier(0.2, 0.8, 0.2, 1),
     border-color 0.18s ease,
     box-shadow 0.22s ease,
     background 0.2s ease;
@@ -45,16 +132,14 @@
 
 /* Focus ring lives on the outer shell so the HUD feels like one object. */
 .graph-floating-toolbar:has(.graph-search-input:focus) {
-  width: var(--graph-hud-panel-width);
-  background: color-mix(in oklch, var(--bg-1) 88%, transparent);
-  border-color: color-mix(in oklch, var(--accent) 40%, var(--line));
+  background: var(--ui-panel-strong);
+  border-color: var(--ui-control-border-hover);
   box-shadow:
     var(--shadow-md),
-    0 0 0 3px var(--accent-soft);
+    0 0 0 3px var(--ui-outline-soft);
 }
 
-/* Search slot — invisible wrapper. No border, no bg, no shadow.
-   Width transitions so typing reveals a bit more real estate. */
+/* Search slot — invisible wrapper. No border, no background, no shadow. */
 .graph-search-field {
   display: flex;
   align-items: center;
@@ -67,14 +152,6 @@
   border-radius: 0;
   box-shadow: none;
   padding: 0;
-  transition:
-    min-width 0.26s cubic-bezier(0.2, 0.8, 0.2, 1),
-    max-width 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.graph-search-field:focus-within {
-  min-width: 0;
-  max-width: 100%;
 }
 
 .graph-search-ico {
@@ -91,12 +168,12 @@
 }
 
 .graph-search-field:focus-within .graph-search-ico {
-  color: var(--accent);
+  color: var(--fg);
   opacity: 1;
 }
 
 .graph-search-input {
-  flex: 1 1 40px;
+  flex: 1 1 80px;
   min-width: 0;
   height: 100%;
   margin: 0;
@@ -106,9 +183,9 @@
   outline: none;
   font-size: 14px;
   line-height: 1.25;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   color: var(--fg);
-  caret-color: var(--accent);
+  caret-color: var(--fg);
   font-family: var(--font-sans);
   -webkit-appearance: none;
   appearance: none;
@@ -137,7 +214,7 @@
   padding: 0;
   border: none;
   border-radius: 6px;
-  background: color-mix(in oklch, var(--fg-3) 10%, transparent);
+  background: var(--ui-muted-bg);
   color: var(--fg-2);
   cursor: pointer;
   flex-shrink: 0;
@@ -146,30 +223,12 @@
 
 .graph-search-clear:hover {
   color: var(--fg);
-  background: color-mix(in oklch, var(--fg-3) 22%, transparent);
+  background: var(--ui-control-bg-hover);
 }
 
 .graph-search-clear:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ui-outline);
   outline-offset: 1px;
-}
-
-/* Right-side shortcut (“/” or ↵) — sits flush inside the toolbar,
-   no vertical divider, just a clear gap from the input. */
-.graph-search-trail {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  padding: 0 6px 0 6px;
-  height: 100%;
-}
-
-/* “/” 快捷键 — 键帽感，用等宽字体的字重而非 SVG 细线 */
-.graph-search-shortcut {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
 }
 
 .graph-kbd {
@@ -185,9 +244,8 @@
   letter-spacing: 0;
   line-height: 1;
   color: var(--fg-1);
-  /* 实体键帽：等宽 + 字重，比 SVG 描边斜线更像「键」 */
-  background: linear-gradient(180deg, var(--bg-2), var(--bg-3));
-  border: 1px solid var(--line-soft);
+  background: var(--ui-control-bg);
+  border: 1px solid var(--ui-control-border);
   border-radius: 5px;
   box-shadow:
     0 1px 0 oklch(1 0 0 / 0.07),
@@ -209,7 +267,7 @@
   color: var(--fg-1);
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .graph-search-badgerow--ok .graph-search-meta-ico {
@@ -235,7 +293,7 @@
   flex-direction: column;
   width: var(--graph-hud-panel-width);
   max-height: min(420px, calc(100vh - 160px));
-  background: color-mix(in oklch, var(--bg-1) 82%, transparent);
+  background: var(--ui-panel);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
   backdrop-filter: blur(20px) saturate(160%);
   border: 1px solid var(--line);
@@ -285,7 +343,7 @@
 }
 
 .graph-results-item[aria-selected="true"] {
-  background: var(--accent-soft);
+  background: var(--ui-control-bg-active);
   color: var(--fg);
 }
 
@@ -302,7 +360,7 @@
   color: var(--fg-1);
   flex-shrink: 0;
   text-transform: uppercase;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .graph-results-favicon--google {
@@ -371,7 +429,7 @@
   flex: 1 1 auto;
   min-width: 0;
   font-family: var(--font-mono);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   text-align: right;
 }
 
@@ -399,7 +457,7 @@
   font-size: 11px;
   color: var(--fg-3);
   flex-shrink: 0;
-  background: color-mix(in oklch, var(--bg) 25%, transparent);
+  background: var(--ui-panel-soft);
 }
 
 .graph-results-footer > span {
@@ -485,19 +543,19 @@
   height: 22px;
   border-radius: 999px;
   border: 0;
-  background: color-mix(in oklch, var(--fg-3) 10%, transparent);
+  background: var(--ui-muted-bg);
   color: var(--fg-2);
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
 
 .graph-focus-chip__close:hover {
-  background: color-mix(in oklch, var(--warn) 22%, transparent);
+  background: var(--ui-control-bg-hover);
   color: var(--fg);
 }
 
 .graph-focus-chip__close:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ui-outline);
   outline-offset: 1px;
 }
 
@@ -542,13 +600,13 @@
 }
 
 .graph-focus-suggest__pill:hover {
-  border-color: color-mix(in oklch, var(--accent) 50%, var(--line));
-  background: var(--accent-soft);
+  border-color: var(--ui-control-border-hover);
+  background: var(--ui-control-bg-hover);
   color: var(--fg);
 }
 
 .graph-focus-suggest__pill:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ui-outline);
   outline-offset: 1px;
 }
 
@@ -589,7 +647,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: color-mix(in oklch, var(--bg-1) 88%, transparent);
+  background: var(--ui-panel-strong);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   backdrop-filter: blur(18px) saturate(160%);
   border: 1px solid var(--line);
@@ -651,12 +709,12 @@
 
 .graph-groups-panel__collapse:hover {
   color: var(--fg);
-  background: var(--bg-2);
-  border-color: var(--line-soft);
+  background: var(--ui-control-bg-hover);
+  border-color: var(--ui-control-border);
 }
 
 .graph-groups-panel__collapse:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ui-outline);
   outline-offset: 2px;
 }
 
@@ -666,24 +724,23 @@
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--line-soft);
-  background: color-mix(in oklch, var(--bg) 18%, transparent);
+  background: var(--ui-panel-soft);
 }
 
 .graph-groups-panel__tool {
   min-height: 30px;
   padding: 0 10px;
   border-radius: 8px;
-  border: 1px solid var(--line-soft);
-  background: var(--bg-2);
+  border: 1px solid var(--ui-control-border);
+  background: var(--ui-control-bg);
   color: var(--fg-1);
   font-size: 12px;
-  font-weight: 550;
   transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
 .graph-groups-panel__tool:hover:not(:disabled) {
-  border-color: color-mix(in oklch, var(--accent) 40%, var(--line));
-  background: var(--accent-soft);
+  border-color: var(--ui-control-border-hover);
+  background: var(--ui-control-bg-hover);
   color: var(--fg);
 }
 
@@ -693,7 +750,7 @@
 }
 
 .graph-groups-panel__tool:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ui-outline);
   outline-offset: 2px;
 }
 
@@ -719,6 +776,11 @@
 }
 
 @media (max-width: 640px) {
+  .graph-search-launcher {
+    right: 12px;
+    top: 64px;
+  }
+
   .graph-groups-dialog-backdrop {
     align-items: flex-start;
     padding: 72px 12px 12px;

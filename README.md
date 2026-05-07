@@ -1,6 +1,6 @@
-# Bookmark Graph New Tab
+# Loci
 
-Chrome 扩展（Manifest V3），替换新标签页，把真实 Chrome 书签变成一张 Obsidian 风格的分层图。
+Chrome 扩展（Manifest V3），替换新标签页，把真实 Chrome 书签变成一张可搜索、可编辑、可聚焦的图谱。
 
 ## 现在的交互模型
 
@@ -29,7 +29,7 @@ Chrome 扩展（Manifest V3），替换新标签页，把真实 Chrome 书签变
 | 进入分组 | 点击分组节点 |
 | 返回上级 | 顶部当前分组 chip，或右侧 rail 当前分组按钮 |
 | 打开书签 | 点击书签节点 |
-| 搜索/聚焦 | 顶部输入框，或按 `/` |
+| 搜索/聚焦 | 直接输入 `a-z` 唤起居中搜索 |
 | 添加书签 | 右键空白 → 添加 |
 | 新建分组 | 右键空白 → 新建分组 |
 | 编辑/删除书签 | 右键书签节点 |
@@ -68,7 +68,7 @@ npm run package:extension
 脚本会先构建 `dist/`，再生成：
 
 ```text
-release/bookmark-graph-0.1.0.zip
+release/loci-0.1.0.zip
 ```
 
 这个 zip 可用于备份、分发测试或作为 Chrome Web Store 上传前的本地包。

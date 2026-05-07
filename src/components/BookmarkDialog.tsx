@@ -55,7 +55,7 @@ export function BookmarkDialog({
   const title = mode === 'create' ? copy.workspace.addBookmarkTitle : copy.workspace.editBookmarkTitle;
 
   return (
-    <Modal open={open} onClose={onCancel} title={title}>
+    <Modal open={open} onClose={onCancel} title={title} allowOverflow>
       <Field label={copy.workspace.bookmarkUrl}>
         <input
           autoFocus
@@ -88,11 +88,20 @@ export function BookmarkDialog({
           onChange={setGroupId}
         />
       </Field>
-      <div style={s.actions}>
-        <button onClick={onCancel} style={s.btnGhost}>
+      <div className="dialog-actions">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="dialog-button dialog-button--ghost"
+        >
           {copy.workspace.cancel}
         </button>
-        <button onClick={submit} disabled={!valid} style={valid ? s.btnPrimary : s.btnDisabled}>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!valid}
+          className="dialog-button dialog-button--primary"
+        >
           {copy.workspace.ok}
         </button>
       </div>
@@ -125,29 +134,5 @@ const s: Record<string, CSSProperties> = {
     outline: 'none',
     fontSize: 13,
     width: '100%',
-  },
-  actions: { display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 },
-  btnGhost: {
-    padding: '8px 14px',
-    borderRadius: 8,
-    fontSize: 13,
-    color: 'var(--fg-2)',
-    border: '1px solid var(--line)',
-  },
-  btnPrimary: {
-    padding: '8px 14px',
-    borderRadius: 8,
-    fontSize: 13,
-    color: 'var(--accent-ink)',
-    background: 'var(--accent)',
-    fontWeight: 500,
-  },
-  btnDisabled: {
-    padding: '8px 14px',
-    borderRadius: 8,
-    fontSize: 13,
-    color: 'var(--fg-3)',
-    background: 'var(--bg-2)',
-    cursor: 'not-allowed',
   },
 };

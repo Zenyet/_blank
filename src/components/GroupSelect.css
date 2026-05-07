@@ -11,8 +11,8 @@
   gap: 10px;
   padding: 7px 9px;
   border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--bg-2);
+  border: 1px solid var(--ui-control-border);
+  background: var(--ui-control-bg);
   color: var(--fg);
   text-align: left;
   cursor: pointer;
@@ -20,15 +20,15 @@
 }
 
 .group-select__trigger:hover {
-  background: var(--bg-3);
-  border-color: var(--line);
+  background: var(--ui-control-bg-hover);
+  border-color: var(--ui-control-border-hover);
 }
 
 .group-select__trigger:focus-visible,
 .group-select__trigger[aria-expanded="true"] {
   outline: none;
-  border-color: color-mix(in oklch, var(--accent) 46%, var(--line));
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-color: var(--ui-control-border-hover);
+  box-shadow: 0 0 0 3px var(--ui-outline-soft);
 }
 
 .group-select__mark {
@@ -96,8 +96,8 @@
   padding: 5px;
   overflow-y: auto;
   border-radius: 10px;
-  border: 1px solid var(--line);
-  background: color-mix(in oklch, var(--bg-1) 96%, transparent);
+  border: 1px solid var(--ui-control-border);
+  background: var(--ui-panel-strong);
   box-shadow: var(--shadow-lg);
   animation: group-select-in 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -131,12 +131,13 @@
 
 .group-select__option:hover,
 .group-select__option[data-active="true"] {
-  background: var(--accent-soft);
+  background: var(--ui-control-bg-hover);
   color: var(--fg);
 }
 
 .group-select__option[aria-selected="true"] {
-  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  background: var(--ui-control-bg-active);
+  color: var(--fg);
 }
 
 .group-select__empty {

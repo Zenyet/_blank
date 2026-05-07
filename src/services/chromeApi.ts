@@ -331,15 +331,22 @@ export function subscribeBookmarkChanges(cb: () => void): () => void {
 // ─── Settings (chrome.storage.local with localStorage fallback) ───────────
 
 const SETTINGS_KEY = 'newtab-settings';
+const VALID_THEMES = new Set(['dark', 'light', 'system']);
+
+function normalizeSettings(raw: Partial<Settings> | null | undefined): Settings {
+  const next = { ...DEFAULT_SETTINGS, ...(raw ?? {}) };
+  if (!VALID_THEMES.has(next.theme)) next.theme = DEFAULT_SETTINGS.theme;
+  return next;
+}
 
 export async function loadSettings(): Promise<Settings> {
   if (hasChromeApi && chrome.storage?.local) {
     const obj = await chrome.storage.local.get(SETTINGS_KEY);
-    return { ...DEFAULT_SETTINGS, ...(obj[SETTINGS_KEY] || {}) };
+    return normalizeSettings(obj[SETTINGS_KEY] || null);
   }
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    return { ...DEFAULT_SETTINGS, ...(raw ? JSON.parse(raw) : {}) };
+    return normalizeSettings(raw ? JSON.parse(raw) : null);
   } catch {
     return DEFAULT_SETTINGS;
   }

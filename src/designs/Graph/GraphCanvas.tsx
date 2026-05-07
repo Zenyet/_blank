@@ -33,6 +33,8 @@ interface Props {
   hueOverrides?: Record<string, number>;
   /** Shorter dolly animations when the user enables reduce motion. */
   reduceMotion?: boolean;
+  /** Rebuilds canvas theme colors when the resolved UI theme changes. */
+  themeKey: string;
   onRequestEdge: (fromId: string, toId: string) => void;
   onOpenBookmark: (id: string) => void;
   onOpenGroup: (id: string) => void;
@@ -129,6 +131,7 @@ export function GraphCanvas(props: Props) {
     props.highlightGroupMembers,
     props.highlightGroupHue,
     props.hueOverrides,
+    props.themeKey,
   ]);
 
   // Enter/exit camera tracking. Search focus follows the live node position
@@ -317,7 +320,7 @@ export function GraphCanvas(props: Props) {
     };
     // filterMatches is read via filterMatchesRef so it doesn't belong here;
     // recreating the rAF loop on each keystroke would just churn timers.
-  }, [sim, props.bookmarks, props.edges, props.pins, camera]);
+  }, [sim, props.bookmarks, props.edges, props.pins, props.themeKey, camera]);
 
   // Pointer events.
   useEffect(() => {

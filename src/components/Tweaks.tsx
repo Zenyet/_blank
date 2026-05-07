@@ -1,6 +1,6 @@
 import type { ChangeEvent, CSSProperties } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import type { BgPattern, Settings } from '../types';
+import type { BgPattern, Settings, Theme } from '../types';
 import { BUILTIN_BACKGROUNDS, backgroundImageCssValue, isGradientValue } from '../data/backgrounds';
 import { copy } from '../i18n';
 import {
@@ -15,6 +15,7 @@ import {
   DEFAULT_CUSTOM_SEARCH_URL,
   SEARCH_PROVIDERS,
 } from '../services/searchProviders';
+import { CloseIcon } from './CloseIcon';
 
 interface Props {
   settings: Settings;
@@ -24,6 +25,7 @@ interface Props {
 }
 
 const BG_OPTIONS: BgPattern[] = ['flat', 'grain', 'grid', 'image'];
+const THEME_OPTIONS: Theme[] = ['system', 'dark', 'light'];
 const MAX_IMAGE_SIDE = 2400;
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // post-compression ceiling.
 
@@ -143,11 +145,11 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
               <h4 id="tweaks-title">{copy.tweaks.title}</h4>
               <button
                 type="button"
-                className="tweaks-close"
+                className="ui-close-button tweaks-close"
                 onClick={onToggle}
                 aria-label="关闭"
               >
-                ×
+                <CloseIcon />
               </button>
             </div>
             <div className="tweaks" aria-label={copy.tweaks.title}>
@@ -156,9 +158,10 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
           <div className="row">
             <label>{copy.tweaks.theme}</label>
             <div className="toggle">
-              {(['dark', 'light'] as const).map((v) => (
+              {THEME_OPTIONS.map((v) => (
                 <button
                   key={v}
+                  type="button"
                   className={settings.theme === v ? 'active' : ''}
                   onClick={() => onChange({ theme: v })}
                 >
@@ -193,8 +196,7 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
               <label>{copy.tweaks.bgImageTitle}</label>
 
               {/* Built-in gradient gallery. Clicking a swatch stores the
-                  gradient CSS directly in settings.bgImage; the currently
-                  applied item gets an accent border. */}
+                  gradient CSS directly in settings.bgImage. */}
               <div style={galleryGroupLabel}>内建</div>
               <div style={galleryGrid}>
                 {BUILTIN_BACKGROUNDS.map((bg) => {
@@ -209,9 +211,11 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
                       style={{
                         ...galleryItem,
                         backgroundImage: bg.value,
-                        borderColor: active ? 'var(--accent)' : 'var(--line)',
+                        borderColor: active
+                          ? 'var(--ui-control-border-hover)'
+                          : 'var(--line)',
                         boxShadow: active
-                          ? '0 0 0 2px var(--accent-soft)'
+                          ? '0 0 0 2px var(--ui-outline-soft)'
                           : undefined,
                       }}
                     >
@@ -242,9 +246,11 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
                             style={{
                               ...galleryItem,
                               backgroundImage: backgroundImageCssValue(bg.value),
-                              borderColor: active ? 'var(--accent)' : 'var(--line)',
+                              borderColor: active
+                                ? 'var(--ui-control-border-hover)'
+                                : 'var(--line)',
                               boxShadow: active
-                                ? '0 0 0 2px var(--accent-soft)'
+                                ? '0 0 0 2px var(--ui-outline-soft)'
                                 : undefined,
                             }}
                           >
@@ -295,8 +301,7 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
                 <button
                   type="button"
                   onClick={() => fileRef.current?.click()}
-                  className="toggle-btn"
-                  style={tweakBtnStyle}
+                  className="tweaks-action-button"
                 >
                   {copy.tweaks.bgImageUpload}
                 </button>
@@ -311,8 +316,8 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
                         ? '把当前背景保存为我的预设'
                         : '没有可保存的背景'
                   }
+                  className="tweaks-action-button"
                   style={{
-                    ...tweakBtnStyle,
                     opacity: canSavePreset ? 1 : 0.5,
                     cursor: canSavePreset ? 'pointer' : 'not-allowed',
                   }}
@@ -323,8 +328,7 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
                   <button
                     type="button"
                     onClick={removeImage}
-                    className="toggle-btn"
-                    style={{ ...tweakBtnStyle, color: 'var(--warn)' }}
+                    className="tweaks-action-button"
                   >
                     {copy.tweaks.bgImageRemove}
                   </button>
@@ -344,39 +348,14 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
                   type="button"
                   onClick={applyUrl}
                   disabled={!urlDraft.trim()}
+                  className="tweaks-action-button"
                   style={{
-                    ...tweakBtnStyle,
                     opacity: urlDraft.trim() ? 1 : 0.5,
                   }}
                 >
                   应用
                 </button>
               </div>
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  fontSize: 11,
-                  color: 'var(--fg-2)',
-                }}
-              >
-                <span style={{ flexShrink: 0 }}>{copy.tweaks.bgImageDim}</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={80}
-                  step={1}
-                  value={Math.round(settings.bgImageDim * 100)}
-                  onChange={(e) =>
-                    onChange({ bgImageDim: Number(e.target.value) / 100 })
-                  }
-                  style={{ flex: 1 }}
-                />
-                <span className="mono" style={{ minWidth: 28, textAlign: 'right' }}>
-                  {Math.round(settings.bgImageDim * 100)}%
-                </span>
-              </label>
               {error && (
                 <span style={{ fontSize: 11, color: 'var(--warn)' }}>{error}</span>
               )}
@@ -390,7 +369,7 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
               <span>{copy.tweaks.searchProvider}</span>
               <span className="tweaks-metric-hint">{copy.tweaks.searchProviderHint}</span>
             </div>
-            <div style={searchProviderGrid}>
+            <div className="tweaks-provider-grid">
               {SEARCH_PROVIDERS.map((provider) => {
                 const active = settings.searchProvider === provider.id;
                 return (
@@ -398,18 +377,15 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
                     key={provider.id}
                     type="button"
                     onClick={() => onChange({ searchProvider: provider.id })}
-                    style={{
-                      ...searchProviderButton,
-                      ...(active ? searchProviderButtonActive : {}),
-                    }}
+                    className={`tweaks-provider-button${active ? ' active' : ''}`}
                   >
-                    <span style={providerText}>
+                    <span className="tweaks-provider-text">
                       <span>{provider.label}</span>
-                      <span style={providerDescription}>
+                      <span className="tweaks-provider-description">
                         {provider.description}
                       </span>
                     </span>
-                    <span style={providerBadge}>
+                    <span className="tweaks-provider-badge">
                       {provider.kind === 'ask'
                         ? copy.tweaks.searchKindAsk
                         : copy.tweaks.searchKindSearch}
@@ -426,24 +402,21 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
                       settings.customSearchUrl || DEFAULT_CUSTOM_SEARCH_URL,
                   })
                 }
-                style={{
-                  ...searchProviderButton,
-                  ...(settings.searchProvider === 'custom'
-                    ? searchProviderButtonActive
-                    : {}),
-                }}
+                className={`tweaks-provider-button${
+                  settings.searchProvider === 'custom' ? ' active' : ''
+                }`}
               >
-                <span style={providerText}>
+                <span className="tweaks-provider-text">
                   <span>{settings.customSearchName.trim() || '自定义'}</span>
-                  <span style={providerDescription}>
+                  <span className="tweaks-provider-description">
                     {settings.customSearchUrl.trim() || '自定义链接模板'}
                   </span>
                 </span>
-                <span style={providerBadge}>URL</span>
+                <span className="tweaks-provider-badge">URL</span>
               </button>
             </div>
             {settings.searchProvider === 'custom' && (
-              <div style={searchCustomGrid}>
+              <div className="tweaks-custom-grid">
                 <input
                   value={settings.customSearchName}
                   onChange={(e) =>
@@ -453,7 +426,7 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
                     })
                   }
                   placeholder={copy.tweaks.customSearchName}
-                  style={urlInputStyle}
+                  className="tweaks-url-input"
                 />
                 <input
                   value={settings.customSearchUrl}
@@ -464,7 +437,7 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
                     })
                   }
                   placeholder={copy.tweaks.customSearchUrl}
-                  style={urlInputStyle}
+                  className="tweaks-url-input"
                 />
               </div>
             )}
@@ -548,75 +521,6 @@ export function Tweaks({ settings, onChange, open, onToggle }: Props) {
   );
 }
 
-const tweakBtnStyle = {
-  padding: '7px 10px',
-  fontSize: 11,
-  lineHeight: 1.25,
-  borderRadius: 7,
-  color: 'var(--fg-2)',
-  background: 'var(--bg-2)',
-  border: '1px solid var(--line)',
-};
-
-const searchProviderGrid: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))',
-  gap: 8,
-};
-
-const searchProviderButton: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 12,
-  minHeight: 54,
-  padding: '10px 11px',
-  borderRadius: 8,
-  border: '1px solid var(--line)',
-  background: 'var(--bg-2)',
-  color: 'var(--fg-2)',
-  fontSize: 12,
-  textAlign: 'left',
-};
-
-const searchProviderButtonActive: CSSProperties = {
-  borderColor: 'var(--accent)',
-  background: 'var(--accent-soft)',
-  color: 'var(--fg)',
-};
-
-const providerBadge: CSSProperties = {
-  flexShrink: 0,
-  padding: '3px 6px',
-  borderRadius: 6,
-  background: 'color-mix(in oklch, var(--fg-3) 12%, transparent)',
-  color: 'var(--fg-3)',
-  fontSize: 10,
-  lineHeight: 1,
-};
-
-const providerText: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 3,
-  minWidth: 0,
-};
-
-const providerDescription: CSSProperties = {
-  color: 'var(--fg-3)',
-  fontSize: 10.5,
-  lineHeight: 1.3,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-};
-
-const searchCustomGrid: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))',
-  gap: 8,
-};
-
 const galleryGrid = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(48px, 1fr))',
@@ -686,8 +590,8 @@ const urlInputStyle = {
   lineHeight: 1.35,
   borderRadius: 7,
   color: 'var(--fg)',
-  background: 'var(--bg-2)',
-  border: '1px solid var(--line)',
+  background: 'var(--ui-control-bg)',
+  border: '1px solid var(--ui-control-border)',
 };
 
 /**

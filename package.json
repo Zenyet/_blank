@@ -1,9 +1,9 @@
 {
-  "name": "bookmark-graph-new-tab",
+  "name": "loci",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A Chrome new-tab extension that turns bookmarks into an Obsidian-style graph.",
+  "description": "A Chrome new-tab extension that turns bookmarks into a searchable graph.",
   "scripts": {
     "dev": "vite --port 5174",
     "build": "tsc -b && vite build",

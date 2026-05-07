@@ -17,6 +17,18 @@
   --info: oklch(0.78 0.12 240);
   --warn: oklch(0.80 0.15 80);
 
+  --ui-panel: color-mix(in oklch, var(--bg-1) 88%, transparent);
+  --ui-panel-soft: color-mix(in oklch, var(--bg) 20%, transparent);
+  --ui-panel-strong: color-mix(in oklch, var(--bg-1) 94%, transparent);
+  --ui-control-bg: color-mix(in oklch, var(--fg) 5%, var(--bg-1));
+  --ui-control-bg-hover: color-mix(in oklch, var(--fg) 10%, var(--bg-1));
+  --ui-control-bg-active: color-mix(in oklch, var(--fg) 14%, var(--bg-1));
+  --ui-control-border: color-mix(in oklch, var(--fg) 12%, transparent);
+  --ui-control-border-hover: color-mix(in oklch, var(--fg) 24%, transparent);
+  --ui-outline: color-mix(in oklch, var(--fg) 34%, transparent);
+  --ui-outline-soft: color-mix(in oklch, var(--fg) 18%, transparent);
+  --ui-muted-bg: color-mix(in oklch, var(--fg-3) 10%, transparent);
+
   --radius: 10px;
   --radius-sm: 6px;
   --radius-lg: 16px;

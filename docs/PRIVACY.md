@@ -1,6 +1,6 @@
-# Bookmark Graph New Tab Privacy
+# Loci Privacy
 
-Bookmark Graph New Tab 是一个本地优先的 Chrome 新标签页扩展。它读取你的浏览器书签并在新标签页中显示为图视图。
+Loci 是一个本地优先的 Chrome 新标签页扩展。它读取你的浏览器书签并在新标签页中显示为图视图。
 
 ## 数据使用
 
@@ -24,6 +24,12 @@ Bookmark Graph New Tab 是一个本地优先的 Chrome 新标签页扩展。它�
 当前版本不会把书签、历史记录、常用站点、设置或图数据发送到任何外部服务器。
 
 扩展会尝试加载站点 favicon。浏览器可能会向对应网站请求图标资源，这和打开该网站图标的常规网络行为一致。
+
+## Chrome Web Store Limited Use 声明
+
+扩展仅将通过 Chrome API 获得的信息用于提供和改进“书签图谱新标签页”这一单一用途。扩展不会出售用户数据，不会将用户数据用于广告，不会将用户数据转移给数据经纪商或广告平台，也不会将用户数据用于信用评估或借贷目的。
+
+The use of information received from Chrome APIs will adhere to the Chrome Web Store User Data Policy, including the Limited Use requirements.
 
 ## 用户控制
 

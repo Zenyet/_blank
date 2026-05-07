@@ -43,14 +43,22 @@ export function ConfirmDialog({
   return (
     <Modal open={open} onClose={onCancel} title={title} width={380}>
       <div style={s.message}>{message}</div>
-      <div style={s.actions}>
-        <button onClick={onCancel} style={s.btnGhost} type="button">
+      <div className="dialog-actions">
+        <button
+          onClick={onCancel}
+          className="dialog-button dialog-button--ghost"
+          type="button"
+        >
           {cancelLabel}
         </button>
         <button
           ref={confirmRef}
           onClick={onConfirm}
-          style={danger ? s.btnDanger : s.btnPrimary}
+          className={
+            danger
+              ? 'dialog-button dialog-button--danger'
+              : 'dialog-button dialog-button--primary'
+          }
           type="button"
         >
           {confirmLabel}
@@ -65,34 +73,5 @@ const s: Record<string, CSSProperties> = {
     fontSize: 13,
     color: 'var(--fg-1)',
     lineHeight: 1.55,
-  },
-  actions: {
-    display: 'flex',
-    gap: 8,
-    justifyContent: 'flex-end',
-    marginTop: 4,
-  },
-  btnGhost: {
-    padding: '8px 14px',
-    borderRadius: 8,
-    fontSize: 13,
-    color: 'var(--fg-2)',
-    border: '1px solid var(--line)',
-  },
-  btnPrimary: {
-    padding: '8px 14px',
-    borderRadius: 8,
-    fontSize: 13,
-    color: 'var(--accent-ink)',
-    background: 'var(--accent)',
-    fontWeight: 500,
-  },
-  btnDanger: {
-    padding: '8px 14px',
-    borderRadius: 8,
-    fontSize: 13,
-    color: 'var(--bg-1)',
-    background: 'var(--warn)',
-    fontWeight: 500,
   },
 };

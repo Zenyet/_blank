@@ -8,7 +8,7 @@ import './styles/tokens.css';
 import './styles/shell.css';
 
 export default function App() {
-  const { settings, update, ready } = useSettings();
+  const { settings, resolvedTheme, update, ready } = useSettings();
   const { data, loading, error, refresh } = useChromeData();
   const [tweaksOpen, setTweaksOpen] = useState(false);
 
@@ -57,7 +57,7 @@ export default function App() {
   return (
     <div className="shell">
       <div className="stage">
-        <Graph data={data} settings={settings} />
+        <Graph data={data} settings={settings} resolvedTheme={resolvedTheme} />
       </div>
       <Tweaks
         settings={settings}

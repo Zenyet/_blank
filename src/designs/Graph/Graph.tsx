@@ -7,6 +7,7 @@ import type {
   GraphItem,
   Group,
   PinsMap,
+  ResolvedTheme,
   Settings,
 } from "../../types";
 import { BookmarkDialog } from "../../components/BookmarkDialog";
@@ -53,6 +54,7 @@ import { suggestRelated } from "./relationSuggest";
 interface Props {
   data: ChromeData;
   settings: Settings;
+  resolvedTheme: ResolvedTheme;
 }
 
 type SearchHit =
@@ -79,10 +81,25 @@ type SearchHit =
 
 const groupNodeId = (id: string) => `group:${id}`;
 
-export function Graph({ data, settings }: Props) {
+const isTextEntryElement = (el: HTMLElement | null): boolean => {
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  return ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
+};
+
+const isPlainLetterKey = (e: KeyboardEvent): boolean =>
+  /^[a-z]$/i.test(e.key) &&
+  !e.altKey &&
+  !e.ctrlKey &&
+  !e.metaKey &&
+  !e.repeat &&
+  !e.isComposing;
+
+export function Graph({ data, settings, resolvedTheme }: Props) {
   const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [pins, setPins] = useState<PinsMap>({});
   const [filter, setFilter] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Bookmark | null>(null);
   const [inlineCreating, setInlineCreating] = useState(false);
@@ -115,6 +132,12 @@ export function Graph({ data, settings }: Props) {
     null,
   );
   const filterRef = useRef<HTMLInputElement>(null);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setFilter("");
+    filterRef.current?.blur();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,37 +256,62 @@ export function Graph({ data, settings }: Props) {
   }, []);
 
   useEffect(() => {
+    if (searchOpen) filterRef.current?.focus();
+  }, [searchOpen]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const tag = (document.activeElement as HTMLElement | null)?.tagName;
-      const typing = tag === "INPUT" || tag === "TEXTAREA";
-      if (e.key === "/" && !typing) {
-        e.preventDefault();
-        filterRef.current?.focus();
-      }
-      // Power-user: Cmd/Ctrl + K focuses the search from anywhere, even
-      // while another input has focus (common command-palette contract).
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        filterRef.current?.focus();
-        filterRef.current?.select();
-      }
+      const active = document.activeElement as HTMLElement | null;
+      const typing = isTextEntryElement(active);
       if (e.key === "Escape") {
-        if (bmMenu) setBmMenu(null);
+        if (searchOpen || filter.length > 0) {
+          e.preventDefault();
+          closeSearch();
+        } else if (bmMenu) setBmMenu(null);
         else if (edgeMenu) setEdgeMenu(null);
         else if (groupMenu) setGroupMenu(null);
         else if (canvasMenu) setCanvasMenu(null);
         else if (groupsOpen) closeGroupsDialog();
         else if (focusedNodeId) setFocusedNodeId(null);
         else if (scopeGroupId) setScopeGroupId(null);
-        else if (typing) {
-          (document.activeElement as HTMLElement).blur();
-          setFilter("");
-        }
+        else if (typing) active?.blur();
+        return;
+      }
+
+      if (
+        isPlainLetterKey(e) &&
+        !typing &&
+        !searchOpen &&
+        !adding &&
+        !editing &&
+        !groupsOpen &&
+        !bmMenu &&
+        !edgeMenu &&
+        !groupMenu &&
+        !canvasMenu
+      ) {
+        e.preventDefault();
+        setSearchOpen(true);
+        setFilter(e.key);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [bmMenu, edgeMenu, groupMenu, canvasMenu, groupsOpen, closeGroupsDialog, focusedNodeId, scopeGroupId]);
+  }, [
+    adding,
+    bmMenu,
+    canvasMenu,
+    closeGroupsDialog,
+    closeSearch,
+    edgeMenu,
+    editing,
+    filter,
+    focusedNodeId,
+    groupMenu,
+    groupsOpen,
+    scopeGroupId,
+    searchOpen,
+  ]);
 
   const onRequestEdge = (fromId: string, toId: string) => {
     const next = addEdgeFn(edges, fromId, toId);
@@ -414,6 +462,7 @@ export function Graph({ data, settings }: Props) {
   };
 
   const filterQuery = filter.trim().toLowerCase();
+  const searchActive = searchOpen || filter.length > 0;
 
   const scopeForParentId = (parentId: string): string | null =>
     parentId === data.barId ? null : parentId;
@@ -541,33 +590,43 @@ export function Graph({ data, settings }: Props) {
       setFocusedNodeId(hit.bookmark.id);
       openUrl(hit.bookmark.url, settings.openInNewTab);
     }
-    setFilter("");
-    filterRef.current?.focus();
+    closeSearch();
   };
 
   const openSearchFallback = () => {
     if (!filterQuery) return;
     openUrl(searchUrlForSettings(filter.trim(), settings), settings.openInNewTab);
-    setFilter("");
-    filterRef.current?.focus();
+    closeSearch();
+  };
+
+  const moveSearchSelection = (delta: -1 | 1) => {
+    setSelectedIdx((i) => {
+      if (visibleMatches.length === 0) return 0;
+      return Math.min(visibleMatches.length - 1, Math.max(0, i + delta));
+    });
   };
 
   const onFilterKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeSearch();
+      return;
+    }
     if (!filterQuery) return;
+    const emacsPrevious =
+      e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "p";
+    const emacsNext =
+      e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "n";
     if (e.key === "Enter") {
       e.preventDefault();
       if (selectedHit) openMatch(selectedHit);
       else openSearchFallback();
-    } else if (e.key === "ArrowDown") {
+    } else if (e.key === "ArrowDown" || emacsNext) {
       e.preventDefault();
-      setSelectedIdx((i) =>
-        visibleMatches.length > 0
-          ? Math.min(visibleMatches.length - 1, i + 1)
-          : 0
-      );
-    } else if (e.key === "ArrowUp") {
+      moveSearchSelection(1);
+    } else if (e.key === "ArrowUp" || emacsPrevious) {
       e.preventDefault();
-      setSelectedIdx((i) => Math.max(0, i - 1));
+      moveSearchSelection(-1);
     }
   };
 
@@ -589,6 +648,7 @@ export function Graph({ data, settings }: Props) {
         highlightGroupHue={highlightedGroupHue}
         hueOverrides={groupHues}
         reduceMotion={settings.reduceMotion}
+        themeKey={resolvedTheme}
         onRequestEdge={onRequestEdge}
         onOpenBookmark={(id) => {
           const bm = data.bookmarks.find((b) => b.id === id);
@@ -597,6 +657,7 @@ export function Graph({ data, settings }: Props) {
         onOpenGroup={(id) => {
           setFocusedNodeId(null);
           setFilter("");
+          setSearchOpen(false);
           setScopeGroupId(id);
         }}
         onBookmarkMenu={(x, y, id, worldPos) =>
@@ -610,76 +671,213 @@ export function Graph({ data, settings }: Props) {
         }}
       />
 
-      {/* Floating toolbar + command palette results panel */}
-      <div className="graph-hud-wrap">
+      <button
+        type="button"
+        className="graph-search-launcher"
+        onClick={() => setSearchOpen(true)}
+        aria-label={copy.constellation.filterPlaceholder}
+        title={copy.constellation.filterPlaceholder}
+      >
+        <span className="graph-search-launcher__icon" aria-hidden>
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="M20.5 20.5 16.2 16.2" />
+          </svg>
+        </span>
+        <span className="graph-search-launcher__label">
+          {copy.constellation.searchLauncher}
+        </span>
+      </button>
+
+      {searchActive && (
         <div
-          className="graph-floating-toolbar"
-          role="combobox"
-          aria-haspopup="listbox"
-          aria-expanded={filterQuery.length > 0}
+          className="graph-search-overlay"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeSearch();
+          }}
         >
-          <div className="graph-search-field">
-            <span className="graph-search-ico" aria-hidden>
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="11" cy="11" r="6.5" />
-                <path d="M20.5 20.5 16.2 16.2" />
-              </svg>
-            </span>
-            <input
-              ref={filterRef}
-              className="graph-search-input"
-              type="search"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              onKeyDown={onFilterKeyDown}
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              placeholder={copy.constellation.filterPlaceholder}
-              aria-label={copy.constellation.filterPlaceholder}
-              aria-controls="graph-results-panel"
-              aria-autocomplete="list"
-            />
-            {filter.length > 0 && (
-              <button
-                type="button"
-                className="graph-search-clear"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setFilter("");
-                  filterRef.current?.focus();
-                }}
-                aria-label="清除搜索"
-              >
-                <ClearSearchIcon />
-              </button>
-            )}
-            <div className="graph-search-trail" aria-hidden>
-              <span
-                className="graph-search-shortcut"
-                title={filterQuery ? "回车打开" : "按 / 聚焦搜索"}
-              >
-                {filterQuery ? (
-                  <kbd className="graph-kbd graph-kbd--icon">
-                    <EnterKeyIcon title="" />
-                  </kbd>
-                ) : (
-                  <kbd className="graph-kbd">/</kbd>
+          <div className="graph-search-popover">
+            <div
+              className="graph-floating-toolbar"
+              role="combobox"
+              aria-haspopup="listbox"
+              aria-expanded={filterQuery.length > 0}
+            >
+              <div className="graph-search-field">
+                <span className="graph-search-ico" aria-hidden>
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="6.5" />
+                    <path d="M20.5 20.5 16.2 16.2" />
+                  </svg>
+                </span>
+                <input
+                  ref={filterRef}
+                  className="graph-search-input"
+                  type="search"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  onKeyDown={onFilterKeyDown}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder={copy.constellation.filterPlaceholder}
+                  aria-label={copy.constellation.filterPlaceholder}
+                  aria-controls="graph-results-panel"
+                  aria-autocomplete="list"
+                />
+                {filter.length > 0 && (
+                  <button
+                    type="button"
+                    className="graph-search-clear"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setFilter("");
+                      filterRef.current?.focus();
+                    }}
+                    aria-label="清除搜索"
+                  >
+                    <ClearSearchIcon />
+                  </button>
                 )}
-              </span>
+              </div>
             </div>
+
+            {filterQuery && (
+              <div
+                id="graph-results-panel"
+                className="graph-results-panel"
+                role="listbox"
+                aria-label="搜索结果"
+              >
+                <div
+                  className="graph-results-list"
+                  ref={resultsListRef}
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  {visibleMatches.length > 0 ? (
+                    visibleMatches.map((hit, i) => (
+                      <button
+                        key={hit.id}
+                        type="button"
+                        role="option"
+                        aria-selected={i === selectedIdx}
+                        className="graph-results-item"
+                        onMouseEnter={() => setSelectedIdx(i)}
+                        onClick={() => openMatch(hit)}
+                      >
+                        {hit.kind === "bookmark" ? (
+                          <Favicon
+                            bookmark={hit.bookmark}
+                            size={24}
+                            fontSize={11}
+                            radius={6}
+                          />
+                        ) : (
+                          <span
+                            className="graph-results-groupmark"
+                            style={{
+                              background: `oklch(0.62 0.15 ${
+                                groupHues[hit.group.id] ?? folderHue(hit.group.id)
+                              })`,
+                            }}
+                            aria-hidden
+                          >
+                            {hit.group.label.trim().slice(0, 1) || "组"}
+                          </span>
+                        )}
+                        <span className="graph-results-body">
+                          <HighlightedName text={hit.name} query={filterQuery} />
+                          <span className="graph-results-domain">
+                            {hit.subtitle}
+                          </span>
+                        </span>
+                        <span className="graph-results-enterhint" aria-hidden>
+                          <EnterKeyIcon title="" />
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected
+                      className="graph-results-item graph-results-item--fallback"
+                      onClick={openSearchFallback}
+                    >
+                      <span
+                        className={
+                          fallbackSearchProvider.id === "google"
+                            ? "graph-results-favicon graph-results-favicon--google"
+                            : "graph-results-favicon graph-results-favicon--provider"
+                        }
+                      >
+                        {fallbackSearchProvider.id === "google" ? (
+                          <GoogleIcon />
+                        ) : (
+                          <SearchProviderIcon kind={fallbackSearchProvider.kind} />
+                        )}
+                      </span>
+                      <span className="graph-results-body">
+                        <span className="graph-results-name">
+                          {fallbackSearchProvider.kind === "ask" ? "向" : "用"}{" "}
+                          {fallbackSearchProvider.label}
+                          {fallbackSearchProvider.kind === "ask"
+                            ? " 提问 "
+                            : " 搜索 "}
+                          "<em>{filter.trim()}</em>"
+                        </span>
+                      </span>
+                      <span className="graph-results-enterhint" aria-hidden>
+                        <EnterKeyIcon title="" />
+                      </span>
+                    </button>
+                  )}
+                </div>
+                <div className="graph-results-footer">
+                  <span title="打开">
+                    <kbd className="graph-kbd graph-kbd--icon">
+                      <EnterKeyIcon title="" />
+                    </kbd>
+                    打开
+                  </span>
+                  <span title="上下选择，也支持 Ctrl+P / Ctrl+N">
+                    <kbd className="graph-kbd">↑</kbd>
+                    <kbd className="graph-kbd">↓</kbd>
+                    <kbd className="graph-kbd">⌃P</kbd>
+                    <kbd className="graph-kbd">⌃N</kbd>
+                    选择
+                  </span>
+                  <span title="关闭">
+                    <kbd className="graph-kbd">esc</kbd>
+                    关闭
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
+      )}
 
+      {/* Floating graph state chips stay visible without exposing search chrome. */}
+      <div className="graph-hud-wrap">
         {focusedBookmark && (
           <div
             className="graph-focus-chip"
@@ -771,116 +969,6 @@ export function Graph({ data, settings }: Props) {
           </div>
         )}
 
-        {filterQuery && (
-          <div
-            id="graph-results-panel"
-            className="graph-results-panel"
-            role="listbox"
-            aria-label="搜索结果"
-          >
-            <div
-              className="graph-results-list"
-              ref={resultsListRef}
-              onMouseDown={(e) => e.preventDefault()}
-            >
-              {visibleMatches.length > 0 ? (
-                visibleMatches.map((hit, i) => (
-                  <button
-                    key={hit.id}
-                    type="button"
-                    role="option"
-                    aria-selected={i === selectedIdx}
-                    className="graph-results-item"
-                    onMouseEnter={() => setSelectedIdx(i)}
-                    onClick={() => openMatch(hit)}
-                  >
-                    {hit.kind === "bookmark" ? (
-                      <Favicon
-                        bookmark={hit.bookmark}
-                        size={24}
-                        fontSize={11}
-                        radius={6}
-                      />
-                    ) : (
-                      <span
-                        className="graph-results-groupmark"
-                        style={{
-                          background: `oklch(0.62 0.15 ${
-                            groupHues[hit.group.id] ?? folderHue(hit.group.id)
-                          })`,
-                        }}
-                        aria-hidden
-                      >
-                        {hit.group.label.trim().slice(0, 1) || "组"}
-                      </span>
-                    )}
-                    <span className="graph-results-body">
-                      <HighlightedName text={hit.name} query={filterQuery} />
-                      <span className="graph-results-domain">
-                        {hit.subtitle}
-                      </span>
-                    </span>
-                    <span className="graph-results-enterhint" aria-hidden>
-                      <EnterKeyIcon title="" />
-                    </span>
-                  </button>
-                ))
-              ) : (
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected
-                  className="graph-results-item graph-results-item--fallback"
-                  onClick={openSearchFallback}
-                >
-                  <span
-                    className={
-                      fallbackSearchProvider.id === "google"
-                        ? "graph-results-favicon graph-results-favicon--google"
-                        : "graph-results-favicon graph-results-favicon--provider"
-                    }
-                  >
-                    {fallbackSearchProvider.id === "google" ? (
-                      <GoogleIcon />
-                    ) : (
-                      <SearchProviderIcon kind={fallbackSearchProvider.kind} />
-                    )}
-                  </span>
-                  <span className="graph-results-body">
-                    <span className="graph-results-name">
-                      {fallbackSearchProvider.kind === "ask" ? "向" : "用"}{" "}
-                      {fallbackSearchProvider.label}
-                      {fallbackSearchProvider.kind === "ask"
-                        ? " 提问 "
-                        : " 搜索 "}
-                      "<em>{filter.trim()}</em>"
-                    </span>
-                  </span>
-                  <span className="graph-results-enterhint" aria-hidden>
-                    <EnterKeyIcon title="" />
-                  </span>
-                </button>
-              )}
-            </div>
-            <div className="graph-results-footer">
-              <span title="打开">
-                <kbd className="graph-kbd graph-kbd--icon">
-                  <EnterKeyIcon title="" />
-                </kbd>
-                打开
-              </span>
-              <span title="上下选择">
-                <kbd className="graph-kbd">↑</kbd>
-                <kbd className="graph-kbd">↓</kbd>
-                选择
-              </span>
-              <span title="清空">
-                <kbd className="graph-kbd">esc</kbd>
-                清空
-              </span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Floating bottom strip — also overlays, so canvas runs full bleed. */}
@@ -1261,7 +1349,7 @@ function HighlightedName({ text, query }: { text: string; query: string }) {
   );
 }
 
-const FLOAT_BG = "color-mix(in oklch, var(--bg-1) 72%, transparent)";
+const FLOAT_BG = "var(--ui-panel)";
 
 const styles: Record<string, CSSProperties> = {
   root: {
@@ -1285,7 +1373,7 @@ const styles: Record<string, CSSProperties> = {
     background: FLOAT_BG,
     backdropFilter: "blur(14px) saturate(160%)",
     WebkitBackdropFilter: "blur(14px) saturate(160%)",
-    border: "1px solid var(--line-soft)",
+    border: "1px solid var(--ui-control-border)",
     borderRadius: 12,
     boxShadow: "var(--shadow-sm)",
     maxWidth: "calc(100vw - 40px)",
