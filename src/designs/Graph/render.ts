@@ -268,13 +268,19 @@ function drawNodes(
     if (img) {
       const s = n.radius * 1.1;
       ctx.save();
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, n.radius - 1, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(n.x - s / 2, n.y - s / 2, s, s);
-      ctx.drawImage(img, n.x - s / 2, n.y - s / 2, s, s);
-      ctx.restore();
+      try {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.radius - 1, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(img, n.x - s / 2, n.y - s / 2, s, s);
+        ctx.globalCompositeOperation = 'destination-over';
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(n.x - s / 2, n.y - s / 2, s, s);
+      } catch {
+        state.favicons.markBroken(n.url);
+      } finally {
+        ctx.restore();
+      }
     }
   }
   ctx.globalAlpha = 1;
