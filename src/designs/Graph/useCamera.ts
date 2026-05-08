@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Camera } from '../../types';
 
 const MIN_SCALE = 0.3;
@@ -188,15 +188,27 @@ export function useCamera(initial: Camera = { scale: 1, tx: 0, ty: 0 }): UseCame
 
   const force = useCallback(() => rerender((n) => n + 1), []);
 
-  return {
-    cameraRef,
-    subscribe,
-    wheelZoom,
-    panBy,
-    reset,
-    focusOnWorldPoint,
-    focusReset,
-    cancelFocus: cancelAnim,
-    force,
-  };
+  return useMemo(
+    () => ({
+      cameraRef,
+      subscribe,
+      wheelZoom,
+      panBy,
+      reset,
+      focusOnWorldPoint,
+      focusReset,
+      cancelFocus: cancelAnim,
+      force,
+    }),
+    [
+      subscribe,
+      wheelZoom,
+      panBy,
+      reset,
+      focusOnWorldPoint,
+      focusReset,
+      cancelAnim,
+      force,
+    ]
+  );
 }

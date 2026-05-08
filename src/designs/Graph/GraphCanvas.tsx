@@ -1,9 +1,9 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
-import type { GraphEdge, GraphItem, Group, PinsMap } from '../../types';
+import type { GraphEdge, GraphItem, GraphNode, Group, PinsMap } from '../../types';
 import { FaviconCache } from './faviconCache';
-import { buildNodeIndex, findEdgeAt, findNodeAt } from './hitTest';
-import { drawGraph, resizeCanvas, type RenderState, type Theme } from './render';
+import { buildNodeIndex, findEdgeAt, findNodeAt, type NodeIndex } from './hitTest';
+import { drawGraph, RenderTextCache, resizeCanvas, type RenderState, type Theme } from './render';
 import { clampScale, useCamera, viewToWorld } from './useCamera';
 import { useGraphSim } from './useGraphSim';
 
@@ -67,6 +67,7 @@ export function GraphCanvas(props: Props) {
   });
   const camera = useCamera();
   const faviconsRef = useRef(new FaviconCache());
+  const textCacheRef = useRef(new RenderTextCache());
 
   // Interaction state — kept in refs to avoid re-renders.
   const hoverNodeRef = useRef<string | null>(null);
@@ -75,9 +76,14 @@ export function GraphCanvas(props: Props) {
   const ghostRef = useRef<RenderState['ghost']>(null);
   const panRef = useRef<{ startX: number; startY: number; tx0: number; ty0: number } | null>(null);
   const needsFrameRef = useRef(true);
+  const scheduleFrameRef = useRef<() => void>(() => {});
   const trackingRef = useRef<CameraTracking | null>(null);
   const reduceMotionRef = useRef(props.reduceMotion);
   const lastSizeRef = useRef({ width: 0, height: 0, dpr: 1 });
+  const nodeIndexRef = useRef<NodeIndex | null>(null);
+  const nodeIndexNodesRef = useRef<GraphNode[] | null>(null);
+  const nodeByIdRef = useRef<Map<string, GraphNode> | null>(null);
+  const nodeByIdNodesRef = useRef<GraphNode[] | null>(null);
   // Mirror the filter-match set into a ref so the rAF loop can read it
   // without having to resubscribe itself each time the filter changes.
   const filterMatchesRef = useRef<Set<string> | null>(props.filterMatches);
@@ -93,12 +99,44 @@ export function GraphCanvas(props: Props) {
     highlightGroupHue: props.highlightGroupHue ?? null,
   });
 
+  const requestFrame = () => {
+    needsFrameRef.current = true;
+    scheduleFrameRef.current();
+  };
+
+  const invalidateSpatialIndex = () => {
+    nodeIndexRef.current = null;
+  };
+
+  const invalidateNodeCaches = () => {
+    invalidateSpatialIndex();
+    nodeByIdRef.current = null;
+  };
+
+  const getNodeIndex = () => {
+    const nodes = sim.nodesRef.current;
+    if (!nodeIndexRef.current || nodeIndexNodesRef.current !== nodes) {
+      nodeIndexRef.current = buildNodeIndex(nodes);
+      nodeIndexNodesRef.current = nodes;
+    }
+    return nodeIndexRef.current;
+  };
+
+  const getNodeById = () => {
+    const nodes = sim.nodesRef.current;
+    if (!nodeByIdRef.current || nodeByIdNodesRef.current !== nodes) {
+      nodeByIdRef.current = new Map(nodes.map((n) => [n.id, n] as const));
+      nodeByIdNodesRef.current = nodes;
+    }
+    return nodeByIdRef.current;
+  };
+
   // Preload favicons whenever bookmarks change.
   useEffect(() => {
     for (const b of props.bookmarks) {
       if (b.nodeKind === 'group') continue;
       faviconsRef.current.ensureLoaded(b.url, () => {
-        needsFrameRef.current = true;
+        requestFrame();
       });
     }
   }, [props.bookmarks]);
@@ -118,7 +156,8 @@ export function GraphCanvas(props: Props) {
       highlightGroupId: props.highlightGroupId,
       highlightGroupHue: props.highlightGroupHue ?? null,
     };
-    needsFrameRef.current = true;
+    invalidateNodeCaches();
+    requestFrame();
   }, [
     props.filterText,
     props.filterMatches,
@@ -148,7 +187,7 @@ export function GraphCanvas(props: Props) {
         startedAt: performance.now(),
         settledFrames: 0,
       };
-      needsFrameRef.current = true;
+      requestFrame();
     } else if (props.focusGroupId && props.focusNeighborhood?.size) {
       trackingRef.current = null;
       const size = lastSizeRef.current;
@@ -176,9 +215,11 @@ export function GraphCanvas(props: Props) {
       const fitScale = Math.min(fitW / w, fitH / h);
       const targetScale = clampScale(Math.max(0.58, Math.min(2.1, fitScale)));
       camera.focusOnWorldPoint(cx, cy, targetScale, size, msIn);
+      requestFrame();
     } else {
       trackingRef.current = null;
       camera.focusReset(msOut);
+      requestFrame();
     }
     // findById reads a live ref. We also depend on filter text because search
     // can keep the same selected id while the query narrows to a single hit.
@@ -196,7 +237,7 @@ export function GraphCanvas(props: Props) {
   // Subscribe to camera changes so we redraw when the user zooms/pans.
   useEffect(() => {
     return camera.subscribe(() => {
-      needsFrameRef.current = true;
+      requestFrame();
     });
   }, [camera]);
 
@@ -209,7 +250,7 @@ export function GraphCanvas(props: Props) {
       const rect = wrap.getBoundingClientRect();
       const dpr = resizeCanvas(canvas, rect.width, rect.height);
       lastSizeRef.current = { width: rect.width, height: rect.height, dpr };
-      needsFrameRef.current = true;
+      requestFrame();
     });
     ro.observe(wrap);
     return () => ro.disconnect();
@@ -229,8 +270,14 @@ export function GraphCanvas(props: Props) {
       line: getComputedStyle(document.body).getPropertyValue('--line') || '#333',
     };
 
-    let raf = 0;
+    let raf: number | null = null;
     let running = true;
+
+    const scheduleFrame = () => {
+      if (!running || raf !== null) return;
+      raf = requestAnimationFrame(loop);
+    };
+    scheduleFrameRef.current = scheduleFrame;
 
     const updateTracking = () => {
       const t = trackingRef.current;
@@ -266,11 +313,15 @@ export function GraphCanvas(props: Props) {
     };
 
     const loop = () => {
+      raf = null;
       if (!running) return;
+      if (document.visibilityState === 'hidden') return;
+
       const simulation = sim.simulationRef.current;
       const alpha = simulation?.alpha() ?? 0;
+      const simActive = alpha > 0.003;
       const active =
-        alpha > 0.003 ||
+        simActive ||
         trackingRef.current !== null ||
         needsFrameRef.current ||
         dragIdRef.current !== null ||
@@ -278,12 +329,16 @@ export function GraphCanvas(props: Props) {
         ghostRef.current !== null;
 
       if (active) {
-        if (simulation && alpha > 0.003) simulation.tick();
-        updateTracking();
+        if (simulation && simActive) {
+          simulation.tick();
+          invalidateSpatialIndex();
+        }
+        const trackingActive = updateTracking();
         const meta = renderMetaRef.current;
 
         const state: RenderState = {
           nodes: sim.nodesRef.current,
+          nodeById: getNodeById(),
           edges: props.edges,
           pins: props.pins,
           hoverNodeId: hoverNodeRef.current,
@@ -292,6 +347,7 @@ export function GraphCanvas(props: Props) {
           filterMatches: filterMatchesRef.current,
           ghost: ghostRef.current,
           favicons: faviconsRef.current,
+          textCache: textCacheRef.current,
           highlightGroupId: meta.highlightGroupId,
           highlightGroupMembers: highlightGroupMembersRef.current,
           highlightGroupHue: meta.highlightGroupHue,
@@ -300,22 +356,36 @@ export function GraphCanvas(props: Props) {
         };
         drawGraph(ctx, state, camera.cameraRef.current, theme, lastSizeRef.current);
         needsFrameRef.current = false;
-      }
 
-      raf = requestAnimationFrame(loop);
+        const nextAlpha = simulation?.alpha() ?? 0;
+        if (
+          nextAlpha > 0.003 ||
+          trackingActive ||
+          trackingRef.current !== null ||
+          dragIdRef.current !== null ||
+          panRef.current !== null ||
+          ghostRef.current !== null ||
+          needsFrameRef.current
+        ) {
+          scheduleFrame();
+        }
+      }
     };
 
-    raf = requestAnimationFrame(loop);
+    scheduleFrame();
     const onVis = () => {
       if (document.visibilityState === 'visible') {
-        needsFrameRef.current = true;
+        requestFrame();
       }
     };
     document.addEventListener('visibilitychange', onVis);
 
     return () => {
       running = false;
-      cancelAnimationFrame(raf);
+      if (raf !== null) cancelAnimationFrame(raf);
+      if (scheduleFrameRef.current === scheduleFrame) {
+        scheduleFrameRef.current = () => {};
+      }
       document.removeEventListener('visibilitychange', onVis);
     };
     // filterMatches is read via filterMatchesRef so it doesn't belong here;
@@ -341,10 +411,19 @@ export function GraphCanvas(props: Props) {
       );
     };
 
-    const nodeAt = (wx: number, wy: number) =>
-      findNodeAt(buildNodeIndex(sim.nodesRef.current), wx, wy);
+    const isInsideCanvas = (ev: PointerEvent | MouseEvent): boolean => {
+      const rect = canvas.getBoundingClientRect();
+      return (
+        ev.clientX >= rect.left &&
+        ev.clientX <= rect.right &&
+        ev.clientY >= rect.top &&
+        ev.clientY <= rect.bottom
+      );
+    };
+
+    const nodeAt = (wx: number, wy: number) => findNodeAt(getNodeIndex(), wx, wy);
     const edgeAt = (wx: number, wy: number) =>
-      findEdgeAt(props.edges, sim.nodesRef.current, wx, wy, 6 / camera.cameraRef.current.scale);
+      findEdgeAt(props.edges, getNodeById(), wx, wy, 6 / camera.cameraRef.current.scale);
 
     let ghostFromId: string | null = null;
     // A pointer-down on a node stays "pending": we don't touch the physics
@@ -376,7 +455,7 @@ export function GraphCanvas(props: Props) {
       if (node && ev.shiftKey && !isGroupNode(node)) {
         ghostFromId = node.id;
         ghostRef.current = { fromX: node.x, fromY: node.y, toX: wx, toY: wy };
-        needsFrameRef.current = true;
+        requestFrame();
       } else if (node && ev.altKey) {
         if (isGroupNode(node)) {
           props.onOpenGroup(node.groupId ?? node.id);
@@ -403,6 +482,19 @@ export function GraphCanvas(props: Props) {
     };
 
     const onMove = (ev: PointerEvent) => {
+      const hasGesture =
+        pendingDrag ||
+        dragIdRef.current ||
+        ghostFromId ||
+        panRef.current;
+      if (!hasGesture && !isInsideCanvas(ev)) {
+        if (hoverNodeRef.current !== null || hoverEdgeRef.current !== null) {
+          hoverNodeRef.current = null;
+          hoverEdgeRef.current = null;
+          requestFrame();
+        }
+        return;
+      }
       const [wx, wy] = toWorld(ev);
       if (pendingDrag) {
         // Promote to a real drag only once the user moves past the slop.
@@ -415,13 +507,14 @@ export function GraphCanvas(props: Props) {
       }
       if (dragIdRef.current) {
         sim.dragTo(wx, wy);
-        needsFrameRef.current = true;
+        invalidateSpatialIndex();
+        requestFrame();
         return;
       }
       if (ghostFromId) {
         const from = sim.findById(ghostFromId);
         if (from) ghostRef.current = { fromX: from.x, fromY: from.y, toX: wx, toY: wy };
-        needsFrameRef.current = true;
+        requestFrame();
         return;
       }
       if (panRef.current) {
@@ -432,7 +525,7 @@ export function GraphCanvas(props: Props) {
           tx: panRef.current.tx0 + dx,
           ty: panRef.current.ty0 + dy,
         };
-        needsFrameRef.current = true;
+        requestFrame();
         return;
       }
       // Hover detection.
@@ -441,7 +534,7 @@ export function GraphCanvas(props: Props) {
       if (node?.id !== hoverNodeRef.current || edge?.id !== hoverEdgeRef.current) {
         hoverNodeRef.current = node?.id ?? null;
         hoverEdgeRef.current = edge?.id ?? null;
-        needsFrameRef.current = true;
+        requestFrame();
       }
     };
 
@@ -454,7 +547,7 @@ export function GraphCanvas(props: Props) {
         }
         ghostFromId = null;
         ghostRef.current = null;
-        needsFrameRef.current = true;
+        requestFrame();
         return;
       }
       if (pendingDrag) {
@@ -469,12 +562,13 @@ export function GraphCanvas(props: Props) {
       if (dragIdRef.current) {
         sim.endDrag(false);
         dragIdRef.current = null;
+        invalidateSpatialIndex();
         try {
           canvas.releasePointerCapture(ev.pointerId);
         } catch {
           /* already released */
         }
-        needsFrameRef.current = true;
+        requestFrame();
         return;
       }
       panRef.current = null;
@@ -494,6 +588,7 @@ export function GraphCanvas(props: Props) {
       cancelTracking();
       camera.reset();
       sim.reheat(0.3);
+      requestFrame();
     };
 
     const onCtx = (ev: MouseEvent) => {

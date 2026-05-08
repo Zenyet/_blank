@@ -4,16 +4,13 @@
  * Intentionally minimal and problem-specific — replaces d3-force for this
  * app's single use case. Compared to d3-force we give up:
  *
- *   - Barnes–Hut approximation for charge (we do naive O(n²) instead).
- *     Fine up to ~1k nodes on a modern machine; this app targets ≤ a few
- *     hundred so the constant factor wins over the extra code.
  *   - The generic `force()` plug-in API. Everything is baked in here.
  *
  * What we keep:
  *
  *   - Velocity Verlet-ish integration with a single velocity-decay factor.
- *   - Per-pair charge repulsion with a distance cap (matches d3 defaults).
- *   - Position-level collision resolution with iteration count.
+ *   - Pairwise or Barnes–Hut charge repulsion with a distance cap.
+ *   - Position-level collision resolution with a spatial-grid broad phase.
  *   - Spring links with velocity-predicted separation (d3's trick to damp
  *     spring oscillation without needing stiffer decay).
  *   - Per-node group attraction toward a folder centroid (replaces forceX
@@ -107,6 +104,7 @@ export class Engine {
   private links: EngineLink[] = [];
   private groupIndex: Map<string, number> = new Map();
   private groupCount = 1;
+  private groupCentroids: { x: number; y: number }[] = [{ x: 0, y: 0 }];
   private opts: EngineOptions;
   /** Lazily-allocated Barnes–Hut tree. Rebuilt at the top of each tick
    *  whose charge pass uses BH. */
@@ -128,6 +126,9 @@ export class Engine {
     this.links = links;
     this.groupIndex = groupIndex;
     this.groupCount = Math.max(1, groupIndex.size);
+    this.groupCentroids = Array.from({ length: this.groupCount }, (_, i) =>
+      folderCentroid(i, this.groupCount, this.opts.groupRadius)
+    );
   }
 
   /**
@@ -240,12 +241,11 @@ export class Engine {
 
     // ── 3. Group attraction ──────────────────────────────────────────────
     const gs = o.groupStrength * alpha;
-    const gr = o.groupRadius;
-    const gc = this.groupCount;
+    const centroids = this.groupCentroids;
     for (let i = 0; i < n; i++) {
       const node = nodes[i]!;
       const idx = this.groupIndex.get(node.parentId) ?? 0;
-      const c = folderCentroid(idx, gc, gr);
+      const c = centroids[idx] ?? centroids[0]!;
       node.vx += (c.x - node.x) * gs;
       node.vy += (c.y - node.y) * gs;
     }
@@ -278,48 +278,7 @@ export class Engine {
 
     // ── 6. Collision (position-level, iterated) ──────────────────────────
     const pad = o.collidePadding;
-    for (let iter = 0; iter < o.collideIterations; iter++) {
-      for (let i = 0; i < n; i++) {
-        const a = nodes[i]!;
-        const aPinned = a.fx != null || a.fy != null;
-        const ar = a.radius + pad;
-        for (let j = i + 1; j < n; j++) {
-          const b = nodes[j]!;
-          const br = b.radius + pad;
-          const rSum = ar + br;
-          let dx = b.x - a.x;
-          let dy = b.y - a.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 >= rSum * rSum) continue;
-          let d = Math.sqrt(d2);
-          if (d < 0.01) {
-            // Perfect overlap — jitter along a random axis so the push has
-            // a direction. Rare in practice thanks to initial seeding, but
-            // guards against NaN.
-            const theta = Math.random() * Math.PI * 2;
-            dx = Math.cos(theta);
-            dy = Math.sin(theta);
-            d = 1;
-          }
-          const overlap = (rSum - d) / d;
-          const bPinned = b.fx != null || b.fy != null;
-          if (aPinned && !bPinned) {
-            b.x += dx * overlap;
-            b.y += dy * overlap;
-          } else if (bPinned && !aPinned) {
-            a.x -= dx * overlap;
-            a.y -= dy * overlap;
-          } else if (!aPinned && !bPinned) {
-            const half = overlap * 0.5;
-            a.x -= dx * half;
-            a.y -= dy * half;
-            b.x += dx * half;
-            b.y += dy * half;
-          }
-          // Both pinned: nothing to resolve.
-        }
-      }
-    }
+    this.resolveCollisions(nodes, pad, o.collideIterations);
 
     // ── 7. Center drift correction ───────────────────────────────────────
     // Without this, net force asymmetries could let the cloud drift. We
@@ -343,5 +302,98 @@ export class Engine {
 
     // ── 8. Alpha decay ───────────────────────────────────────────────────
     this._alpha += (this._alphaTarget - this._alpha) * o.alphaDecay;
+  }
+
+  private resolveCollisions(
+    nodes: GraphNode[],
+    pad: number,
+    iterations: number
+  ): void {
+    const n = nodes.length;
+    if (n < 240) {
+      for (let iter = 0; iter < iterations; iter++) {
+        for (let i = 0; i < n; i++) {
+          const a = nodes[i]!;
+          for (let j = i + 1; j < n; j++) {
+            this.resolveCollisionPair(a, nodes[j]!, pad);
+          }
+        }
+      }
+      return;
+    }
+
+    let maxR = 0;
+    for (let i = 0; i < n; i++) {
+      const r = nodes[i]!.radius + pad;
+      if (r > maxR) maxR = r;
+    }
+    const cellSize = Math.max(1, maxR * 2);
+    const grid = new Map<string, number[]>();
+
+    for (let iter = 0; iter < iterations; iter++) {
+      grid.clear();
+      for (let i = 0; i < n; i++) {
+        const node = nodes[i]!;
+        const cx = Math.floor(node.x / cellSize);
+        const cy = Math.floor(node.y / cellSize);
+        const key = `${cx}:${cy}`;
+        let bucket = grid.get(key);
+        if (!bucket) {
+          bucket = [];
+          grid.set(key, bucket);
+        }
+        bucket.push(i);
+      }
+
+      for (let i = 0; i < n; i++) {
+        const a = nodes[i]!;
+        const cx = Math.floor(a.x / cellSize);
+        const cy = Math.floor(a.y / cellSize);
+        for (let gy = cy - 1; gy <= cy + 1; gy++) {
+          for (let gx = cx - 1; gx <= cx + 1; gx++) {
+            const bucket = grid.get(`${gx}:${gy}`);
+            if (!bucket) continue;
+            for (const j of bucket) {
+              if (j <= i) continue;
+              this.resolveCollisionPair(a, nodes[j]!, pad);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private resolveCollisionPair(a: GraphNode, b: GraphNode, pad: number): void {
+    const rSum = a.radius + b.radius + pad * 2;
+    let dx = b.x - a.x;
+    let dy = b.y - a.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= rSum * rSum) return;
+
+    let d = Math.sqrt(d2);
+    if (d < 0.01) {
+      // Perfect overlap: jitter along a random axis so the push has direction.
+      const theta = Math.random() * Math.PI * 2;
+      dx = Math.cos(theta);
+      dy = Math.sin(theta);
+      d = 1;
+    }
+
+    const overlap = (rSum - d) / d;
+    const aPinned = a.fx != null || a.fy != null;
+    const bPinned = b.fx != null || b.fy != null;
+    if (aPinned && !bPinned) {
+      b.x += dx * overlap;
+      b.y += dy * overlap;
+    } else if (bPinned && !aPinned) {
+      a.x -= dx * overlap;
+      a.y -= dy * overlap;
+    } else if (!aPinned && !bPinned) {
+      const half = overlap * 0.5;
+      a.x -= dx * half;
+      a.y -= dy * half;
+      b.x += dx * half;
+      b.y += dy * half;
+    }
   }
 }
