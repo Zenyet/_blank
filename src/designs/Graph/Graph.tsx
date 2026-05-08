@@ -50,6 +50,7 @@ import {
 import { focusNeighborhood as computeFocusNeighborhood } from "./focusNeighborhood";
 import { cleanOrphanPins, loadPins, savePins, setPin, unsetPin } from "./pins";
 import { suggestRelated } from "./relationSuggest";
+import { isPlainLetterKey, isSearchShortcutKey } from "./keyboardShortcuts";
 
 interface Props {
   data: ChromeData;
@@ -86,14 +87,6 @@ const isTextEntryElement = (el: HTMLElement | null): boolean => {
   if (el.isContentEditable) return true;
   return ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
 };
-
-const isPlainLetterKey = (e: KeyboardEvent): boolean =>
-  /^[a-z]$/i.test(e.key) &&
-  !e.altKey &&
-  !e.ctrlKey &&
-  !e.metaKey &&
-  !e.repeat &&
-  !e.isComposing;
 
 export function Graph({ data, settings, resolvedTheme }: Props) {
   const [edges, setEdges] = useState<GraphEdge[]>([]);
@@ -132,6 +125,11 @@ export function Graph({ data, settings, resolvedTheme }: Props) {
     null,
   );
   const filterRef = useRef<HTMLInputElement>(null);
+
+  const openSearch = useCallback(() => {
+    setSearchOpen(true);
+    window.requestAnimationFrame(() => filterRef.current?.focus());
+  }, []);
 
   const closeSearch = useCallback(() => {
     setSearchOpen(false);
@@ -279,6 +277,22 @@ export function Graph({ data, settings, resolvedTheme }: Props) {
       }
 
       if (
+        isSearchShortcutKey(e) &&
+        !typing &&
+        !adding &&
+        !editing &&
+        !groupsOpen &&
+        !bmMenu &&
+        !edgeMenu &&
+        !groupMenu &&
+        !canvasMenu
+      ) {
+        e.preventDefault();
+        openSearch();
+        return;
+      }
+
+      if (
         isPlainLetterKey(e) &&
         !typing &&
         !searchOpen &&
@@ -309,6 +323,7 @@ export function Graph({ data, settings, resolvedTheme }: Props) {
     focusedNodeId,
     groupMenu,
     groupsOpen,
+    openSearch,
     scopeGroupId,
     searchOpen,
   ]);
@@ -674,7 +689,7 @@ export function Graph({ data, settings, resolvedTheme }: Props) {
       <button
         type="button"
         className="graph-search-launcher"
-        onClick={() => setSearchOpen(true)}
+        onClick={openSearch}
         aria-label={copy.constellation.filterPlaceholder}
         title={copy.constellation.filterPlaceholder}
       >

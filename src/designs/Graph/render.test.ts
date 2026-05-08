@@ -3,7 +3,10 @@ import type { GraphNode } from '../../types';
 import type { FaviconCache } from './faviconCache';
 import { drawGraph, type RenderState, type Theme } from './render';
 
-function createContext(drawImage: CanvasRenderingContext2D['drawImage']) {
+function createContext(
+  drawImage: CanvasRenderingContext2D['drawImage'],
+  fillRect: CanvasRenderingContext2D['fillRect'] = vi.fn() as unknown as CanvasRenderingContext2D['fillRect']
+) {
   return {
     setTransform: vi.fn(),
     clearRect: vi.fn(),
@@ -17,7 +20,7 @@ function createContext(drawImage: CanvasRenderingContext2D['drawImage']) {
     save: vi.fn(),
     restore: vi.fn(),
     clip: vi.fn(),
-    fillRect: vi.fn(),
+    fillRect,
     drawImage,
     moveTo: vi.fn(),
     lineTo: vi.fn(),
@@ -36,6 +39,14 @@ function createContext(drawImage: CanvasRenderingContext2D['drawImage']) {
     lineCap: 'round' as CanvasLineCap,
     globalCompositeOperation: 'source-over' as GlobalCompositeOperation,
   } as unknown as CanvasRenderingContext2D;
+}
+
+function readyFavicon(): HTMLImageElement {
+  return {
+    complete: true,
+    naturalWidth: 16,
+    naturalHeight: 16,
+  } as HTMLImageElement;
 }
 
 const node: GraphNode = {
@@ -81,17 +92,39 @@ function stateWithFavicons(favicons: FaviconCache): RenderState {
 }
 
 describe('drawGraph', () => {
+  it('draws an opaque backing before favicon pixels', () => {
+    const markBroken = vi.fn();
+    const favicons = {
+      get: vi.fn(() => readyFavicon()),
+      markBroken,
+    } as unknown as FaviconCache;
+    const drawImage = vi.fn();
+    const fillRect = vi.fn();
+    const ctx = createContext(
+      drawImage as unknown as CanvasRenderingContext2D['drawImage'],
+      fillRect as unknown as CanvasRenderingContext2D['fillRect']
+    );
+
+    drawGraph(
+      ctx,
+      stateWithFavicons(favicons),
+      { scale: 1, tx: 0, ty: 0 },
+      theme,
+      { width: 100, height: 100, dpr: 1 }
+    );
+
+    expect(fillRect).toHaveBeenCalled();
+    expect(drawImage).toHaveBeenCalled();
+    expect(fillRect.mock.invocationCallOrder[0]).toBeLessThan(
+      drawImage.mock.invocationCallOrder[0]!
+    );
+    expect(markBroken).not.toHaveBeenCalled();
+  });
+
   it('falls back instead of throwing when a cached favicon becomes broken', () => {
     const markBroken = vi.fn();
     const favicons = {
-      get: vi.fn(
-        () =>
-          ({
-            complete: true,
-            naturalWidth: 16,
-            naturalHeight: 16,
-          }) as HTMLImageElement
-      ),
+      get: vi.fn(() => readyFavicon()),
       markBroken,
     } as unknown as FaviconCache;
     const drawImage = vi.fn(() => {
