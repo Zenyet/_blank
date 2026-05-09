@@ -378,10 +378,6 @@ function drawNodes(
       ctx.fill();
     }
 
-<<<<<<< HEAD
-    // Center letter monogram.
-    drawNodeMonogram(ctx, n, isGroup, alpha);
-=======
     if (detail.monograms) {
       // Center letter monogram.
       ctx.globalAlpha = alpha;
@@ -391,7 +387,6 @@ function drawNodes(
       ctx.textBaseline = 'middle';
       ctx.fillText(n.letter, n.x, n.y + 1);
     }
->>>>>>> 34425ce46b538bacd4fd44b6362db4a834a1b872
 
     // Favicon overlay if loaded — draws on top of letter, same size as radius.
     const img = detail.favicons && !isGroup ? state.favicons.get(n.url) : null;

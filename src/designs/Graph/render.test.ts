@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { GraphNode } from '../../types';
 import type { FaviconCache } from './faviconCache';
-import { drawGraph, type RenderState, type Theme } from './render';
+import { drawGraph, RenderTextCache, type RenderState, type Theme } from './render';
 
 function createContext(
   drawImage: CanvasRenderingContext2D['drawImage'],
@@ -77,6 +77,7 @@ const theme: Theme = {
 function stateWithFavicons(favicons: FaviconCache): RenderState {
   return {
     nodes: [node],
+    nodeById: new Map([[node.id, node]]),
     edges: [],
     pins: {},
     hoverNodeId: null,
@@ -88,6 +89,7 @@ function stateWithFavicons(favicons: FaviconCache): RenderState {
     highlightGroupId: null,
     focusNeighborhood: null,
     focusKind: null,
+    textCache: new RenderTextCache(),
   };
 }
 
