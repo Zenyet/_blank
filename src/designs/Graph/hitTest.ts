@@ -51,12 +51,12 @@ export function pointToSegmentDistance(
  */
 export function findEdgeAt(
   edges: GraphEdge[],
-  nodes: GraphNode[],
+  nodes: GraphNode[] | Map<string, GraphNode>,
   x: number,
   y: number,
   threshold: number
 ): GraphEdge | null {
-  const byId = new Map(nodes.map((n) => [n.id, n] as const));
+  const byId = nodes instanceof Map ? nodes : new Map(nodes.map((n) => [n.id, n] as const));
   let best: { edge: GraphEdge; d: number } | null = null;
   for (const e of edges) {
     const a = byId.get(e.from);

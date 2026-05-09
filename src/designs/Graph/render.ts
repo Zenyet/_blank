@@ -4,6 +4,7 @@ import { convexHull, inflateHull, pathSmoothBlob } from './hull';
 
 export interface RenderState {
   nodes: GraphNode[];
+  nodeById: Map<string, GraphNode>;
   edges: GraphEdge[];
   pins: Record<string, { x: number; y: number }>;
   hoverNodeId: string | null;
@@ -23,6 +24,7 @@ export interface RenderState {
    *  opacity and only edges with both endpoints inside it are drawn. */
   focusNeighborhood: Set<string> | null;
   focusKind: 'node' | 'group' | null;
+  textCache: RenderTextCache;
 }
 
 export interface Theme {
@@ -32,12 +34,62 @@ export interface Theme {
   line: string;
 }
 
+const MAX_CANVAS_DPR = 1.6;
+const MAX_BACKING_PIXELS = 4_000_000;
+const DETAIL_LABEL_SCALE = 0.42;
+const DETAIL_URL_SCALE = 0.82;
+const DETAIL_FAVICON_SCALE = 0.72;
+const DETAIL_MONOGRAM_SCALE = 0.32;
+
+interface WorldBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+interface RenderDetail {
+  labels: boolean;
+  urls: boolean;
+  favicons: boolean;
+  monograms: boolean;
+}
+
+export class RenderTextCache {
+  private ellipsis = new Map<string, string>();
+  private urls = new Map<string, string>();
+
+  ellipsize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+    const key = `${ctx.font}|${maxWidth}|${text}`;
+    const cached = this.ellipsis.get(key);
+    if (cached !== undefined) return cached;
+
+    const value = ellipsizeMeasured(ctx, text, maxWidth);
+    this.ellipsis.set(key, value);
+    if (this.ellipsis.size > 5000) this.ellipsis.clear();
+    return value;
+  }
+
+  displayUrl(url: string): string {
+    const cached = this.urls.get(url);
+    if (cached !== undefined) return cached;
+
+    const value = displayUrl(url);
+    this.urls.set(url, value);
+    if (this.urls.size > 5000) this.urls.clear();
+    return value;
+  }
+}
+
 export function resizeCanvas(
   canvas: HTMLCanvasElement,
   cssWidth: number,
   cssHeight: number
 ): number {
-  const dpr = window.devicePixelRatio || 1;
+  const rawDpr = window.devicePixelRatio || 1;
+  const cssPixels = Math.max(1, cssWidth * cssHeight);
+  const budgetDpr = Math.sqrt(MAX_BACKING_PIXELS / cssPixels);
+  const dpr = Math.max(1, Math.min(rawDpr, MAX_CANVAS_DPR, budgetDpr));
   canvas.width = Math.round(cssWidth * dpr);
   canvas.height = Math.round(cssHeight * dpr);
   canvas.style.width = `${cssWidth}px`;
@@ -67,13 +119,63 @@ export function drawGraph(
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, size.width * size.dpr, size.height * size.dpr);
   applyCamera(ctx, camera, size.width, size.height, size.dpr);
+  const bounds = visibleWorldBounds(camera, size, 96);
+  const detail = detailForScale(camera.scale);
 
   // Group highlight sits behind everything so nodes + edges remain readable.
   if (state.highlightGroupId) drawGroupHighlight(ctx, state);
-  drawEdges(ctx, state);
+  drawEdges(ctx, state, state.nodeById, bounds);
   if (state.ghost) drawGhost(ctx, state.ghost, theme);
-  drawNodes(ctx, state, theme);
-  drawLabels(ctx, state, theme);
+  drawNodes(ctx, state, bounds, detail);
+  if (detail.labels) drawLabels(ctx, state, theme, bounds, detail);
+}
+
+function visibleWorldBounds(
+  camera: Camera,
+  size: { width: number; height: number },
+  padPx: number
+): WorldBounds {
+  const inv = 1 / camera.scale;
+  const pad = padPx * inv;
+  return {
+    minX: (-size.width / 2 - camera.tx) * inv - pad,
+    maxX: (size.width / 2 - camera.tx) * inv + pad,
+    minY: (-size.height / 2 - camera.ty) * inv - pad,
+    maxY: (size.height / 2 - camera.ty) * inv + pad,
+  };
+}
+
+function detailForScale(scale: number): RenderDetail {
+  return {
+    labels: scale >= DETAIL_LABEL_SCALE,
+    urls: scale >= DETAIL_URL_SCALE,
+    favicons: scale >= DETAIL_FAVICON_SCALE,
+    monograms: scale >= DETAIL_MONOGRAM_SCALE,
+  };
+}
+
+function nodeIntersects(n: GraphNode, bounds: WorldBounds, pad = 0): boolean {
+  const r = n.radius + pad;
+  return (
+    n.x + r >= bounds.minX &&
+    n.x - r <= bounds.maxX &&
+    n.y + r >= bounds.minY &&
+    n.y - r <= bounds.maxY
+  );
+}
+
+function segmentIntersectsBounds(
+  a: GraphNode,
+  b: GraphNode,
+  bounds: WorldBounds,
+  pad = 0
+): boolean {
+  return (
+    Math.max(a.x, b.x) + pad >= bounds.minX &&
+    Math.min(a.x, b.x) - pad <= bounds.maxX &&
+    Math.max(a.y, b.y) + pad >= bounds.minY &&
+    Math.min(a.y, b.y) - pad <= bounds.maxY
+  );
 }
 
 /**
@@ -151,12 +253,17 @@ function hueString(h: number, l = 70, c = 0.17): string {
   return `oklch(${l / 100} ${c} ${h})`;
 }
 
-function drawEdges(ctx: CanvasRenderingContext2D, state: RenderState): void {
-  const byId = new Map(state.nodes.map((n) => [n.id, n] as const));
+function drawEdges(
+  ctx: CanvasRenderingContext2D,
+  state: RenderState,
+  byId: Map<string, GraphNode>,
+  bounds: WorldBounds
+): void {
   for (const e of state.edges) {
     const a = byId.get(e.from);
     const b = byId.get(e.to);
     if (!a || !b) continue;
+    if (!segmentIntersectsBounds(a, b, bounds, 48)) continue;
     // In focus mode, hide edges that leave the neighborhood — they only
     // create visual noise and would tether the foreground graph to faded
     // background nodes.
@@ -228,9 +335,11 @@ function drawNodeMonogram(
 function drawNodes(
   ctx: CanvasRenderingContext2D,
   state: RenderState,
-  _theme: Theme
+  bounds: WorldBounds,
+  detail: RenderDetail
 ): void {
   for (const n of state.nodes) {
+    if (!nodeIntersects(n, bounds, 4)) continue;
     const alpha = alphaFor(n.id, state.filterMatches, state.focusNeighborhood);
     const isHover = state.hoverNodeId === n.id;
     const isDragging = state.draggingId === n.id;
@@ -269,11 +378,23 @@ function drawNodes(
       ctx.fill();
     }
 
+<<<<<<< HEAD
     // Center letter monogram.
     drawNodeMonogram(ctx, n, isGroup, alpha);
+=======
+    if (detail.monograms) {
+      // Center letter monogram.
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#fff';
+      ctx.font = `600 ${Math.round(n.radius * (isGroup ? 0.56 : 0.72))}px var(--font-mono, monospace)`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n.letter, n.x, n.y + 1);
+    }
+>>>>>>> 34425ce46b538bacd4fd44b6362db4a834a1b872
 
     // Favicon overlay if loaded — draws on top of letter, same size as radius.
-    const img = isGroup ? null : state.favicons.get(n.url);
+    const img = detail.favicons && !isGroup ? state.favicons.get(n.url) : null;
     if (img) {
       const s = n.radius * 1.1;
       let drawFailed = false;
@@ -302,9 +423,12 @@ function drawNodes(
 function drawLabels(
   ctx: CanvasRenderingContext2D,
   state: RenderState,
-  theme: Theme
+  theme: Theme,
+  bounds: WorldBounds,
+  detail: RenderDetail
 ): void {
   for (const n of state.nodes) {
+    if (!nodeIntersects(n, bounds, 180)) continue;
     const isGroup = n.nodeKind === 'group';
     const alpha = alphaFor(n.id, state.filterMatches, state.focusNeighborhood);
     const maxWidth = isGroup ? 140 : 170;
@@ -316,13 +440,17 @@ function drawLabels(
 
     ctx.font = `${isGroup ? 600 : 500} 12px var(--font-sans, sans-serif)`;
     ctx.fillStyle = theme.fg;
-    ctx.fillText(ellipsize(ctx, n.name, maxWidth), n.x, y);
+    ctx.fillText(state.textCache.ellipsize(ctx, n.name, maxWidth), n.x, y);
 
-    if (!isGroup) {
+    if (!isGroup && detail.urls) {
       ctx.globalAlpha = alpha >= 0.5 ? alpha * 0.66 : alpha * 0.82;
       ctx.font = '10px var(--font-mono, monospace)';
       ctx.fillStyle = theme.fg;
-      ctx.fillText(ellipsize(ctx, displayUrl(n.url), maxWidth), n.x, y + 15);
+      ctx.fillText(
+        state.textCache.ellipsize(ctx, state.textCache.displayUrl(n.url), maxWidth),
+        n.x,
+        y + 15
+      );
     }
   }
   ctx.globalAlpha = 1;
@@ -339,7 +467,7 @@ function displayUrl(url: string): string {
   }
 }
 
-function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+function ellipsizeMeasured(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let lo = 0;
   let hi = text.length;

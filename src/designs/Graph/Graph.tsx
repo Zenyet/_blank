@@ -1,4 +1,8 @@
-import type { CSSProperties } from "react";
+import type {
+  CSSProperties,
+  ReactNode,
+  WheelEvent as ReactWheelEvent,
+} from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   Bookmark,
@@ -989,11 +993,7 @@ export function Graph({ data, settings, resolvedTheme }: Props) {
       {/* Floating bottom strip — also overlays, so canvas runs full bleed. */}
       {settings.showStrip && (
         <div style={styles.bottomStrip}>
-          <div style={styles.stripSection}>
-            <div className="mono" style={styles.stripLabel}>
-              {copy.constellation.stripTop}
-            </div>
-            <div className="strip-row" style={styles.stripRow}>
+          <BottomStripSection label={copy.constellation.stripTop}>
               {[...data.bookmarks]
                 .sort((a, b) => b.visits - a.visits)
                 .slice(0, 8)
@@ -1012,14 +1012,9 @@ export function Graph({ data, settings, resolvedTheme }: Props) {
                     <span style={{ fontSize: 12 }}>{b.name}</span>
                   </button>
                 ))}
-            </div>
-          </div>
+          </BottomStripSection>
           <div style={styles.stripDiv} />
-          <div style={styles.stripSection}>
-            <div className="mono" style={styles.stripLabel}>
-              {copy.constellation.stripRecent}
-            </div>
-            <div className="strip-row" style={styles.stripRow}>
+          <BottomStripSection label={copy.constellation.stripRecent}>
               {data.recents.slice(0, 8).map((r, i) => (
                 <button
                   key={i}
@@ -1045,8 +1040,7 @@ export function Graph({ data, settings, resolvedTheme }: Props) {
                   </span>
                 </button>
               ))}
-            </div>
-          </div>
+          </BottomStripSection>
         </div>
       )}
 
@@ -1207,6 +1201,121 @@ export function Graph({ data, settings, resolvedTheme }: Props) {
   );
 }
 
+function BottomStripSection({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [scrollState, setScrollState] = useState({
+    canLeft: false,
+    canRight: false,
+  });
+
+  const updateScrollState = useCallback(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const maxScrollLeft = Math.max(0, row.scrollWidth - row.clientWidth);
+    const next = {
+      canLeft: row.scrollLeft > 1,
+      canRight: row.scrollLeft < maxScrollLeft - 1,
+    };
+    setScrollState((prev) =>
+      prev.canLeft === next.canLeft && prev.canRight === next.canRight
+        ? prev
+        : next
+    );
+  }, []);
+
+  useEffect(() => {
+    updateScrollState();
+  });
+
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const ro = new ResizeObserver(updateScrollState);
+    ro.observe(row);
+    window.addEventListener("resize", updateScrollState);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", updateScrollState);
+    };
+  }, [updateScrollState]);
+
+  const scrollByPage = useCallback((dir: -1 | 1) => {
+    const row = rowRef.current;
+    if (!row) return;
+    row.scrollBy({
+      left: dir * Math.max(160, row.clientWidth * 0.72),
+      behavior: "smooth",
+    });
+  }, []);
+
+  const onWheel = useCallback(
+    (e: ReactWheelEvent<HTMLDivElement>) => {
+      const row = rowRef.current;
+      if (!row) return;
+      const maxScrollLeft = Math.max(0, row.scrollWidth - row.clientWidth);
+      if (maxScrollLeft <= 1) return;
+      const delta =
+        Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (delta === 0) return;
+      const canMove =
+        delta > 0 ? row.scrollLeft < maxScrollLeft - 1 : row.scrollLeft > 1;
+      if (!canMove) return;
+      e.preventDefault();
+      row.scrollLeft += delta;
+      updateScrollState();
+    },
+    [updateScrollState]
+  );
+
+  return (
+    <div
+      className="graph-strip-section"
+      style={styles.stripSection}
+      data-can-left={scrollState.canLeft ? "true" : "false"}
+      data-can-right={scrollState.canRight ? "true" : "false"}
+    >
+      <div className="mono" style={styles.stripLabel}>
+        {label}
+      </div>
+      <button
+        type="button"
+        className="graph-strip-scroll"
+        onClick={() => scrollByPage(-1)}
+        disabled={!scrollState.canLeft}
+        aria-label="向左滚动"
+        title="向左滚动"
+      >
+        <ChevronLeftIcon />
+      </button>
+      <div
+        ref={rowRef}
+        className="strip-row"
+        style={styles.stripRow}
+        onScroll={updateScrollState}
+        onWheel={onWheel}
+      >
+        {children}
+      </div>
+      <button
+        type="button"
+        className="graph-strip-scroll"
+        onClick={() => scrollByPage(1)}
+        disabled={!scrollState.canRight}
+        aria-label="向右滚动"
+        title="向右滚动"
+      >
+        <ChevronRightIcon />
+      </button>
+    </div>
+  );
+}
+
 function ChevronLeftIcon() {
   return (
     <svg
@@ -1221,6 +1330,24 @@ function ChevronLeftIcon() {
       aria-hidden
     >
       <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="m9 18 6-6-6-6" />
     </svg>
   );
 }
@@ -1413,11 +1540,6 @@ const styles: Record<string, CSSProperties> = {
     overflowY: "hidden",
     flex: 1,
     minWidth: 0,
-    // Subtle fade on the right edge so chips visibly "run under" the strip.
-    maskImage:
-      "linear-gradient(to right, black, black calc(100% - 16px), transparent)",
-    WebkitMaskImage:
-      "linear-gradient(to right, black, black calc(100% - 16px), transparent)",
     scrollbarWidth: "none",
   },
   stripChip: {

@@ -11,7 +11,7 @@
  * rAF loop, and drag helpers.
  */
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { GraphNode } from '../../../types';
 import { folderCentroid, folderHue } from '../folderHue';
 import { Engine, type EngineLink } from './engine';
@@ -104,12 +104,12 @@ export function useGraphSimCustom({
     };
   }, [bookmarks, groups, edges, pins]);
 
-  const reheat = (alpha = 0.4) => {
+  const reheat = useCallback((alpha = 0.4) => {
     const engine = engineRef.current;
     if (engine) engine.alpha(alpha);
-  };
+  }, []);
 
-  const startDrag = (id: string, wx: number, wy: number) => {
+  const startDrag = useCallback((id: string, wx: number, wy: number) => {
     const node = nodesRef.current.find((n) => n.id === id);
     if (!node) return;
     draggingRef.current = id;
@@ -120,18 +120,18 @@ export function useGraphSimCustom({
       engine.alphaTarget(0.3);
       if (engine.alpha() < 0.3) engine.alpha(0.3);
     }
-  };
+  }, []);
 
-  const dragTo = (wx: number, wy: number) => {
+  const dragTo = useCallback((wx: number, wy: number) => {
     const id = draggingRef.current;
     if (!id) return;
     const node = nodesRef.current.find((n) => n.id === id);
     if (!node) return;
     node.fx = wx;
     node.fy = wy;
-  };
+  }, []);
 
-  const endDrag = (pinInsteadOfRelease: boolean) => {
+  const endDrag = useCallback((pinInsteadOfRelease: boolean) => {
     const id = draggingRef.current;
     if (!id) return null;
     draggingRef.current = null;
@@ -145,10 +145,23 @@ export function useGraphSimCustom({
     const engine = engineRef.current;
     if (engine) engine.alphaTarget(0);
     return pos;
-  };
+  }, []);
 
-  const findById = (id: string) =>
-    nodesRef.current.find((n) => n.id === id) ?? null;
+  const findById = useCallback(
+    (id: string) => nodesRef.current.find((n) => n.id === id) ?? null,
+    []
+  );
 
-  return { nodesRef, simulationRef, startDrag, dragTo, endDrag, reheat, findById };
+  return useMemo(
+    () => ({
+      nodesRef,
+      simulationRef,
+      startDrag,
+      dragTo,
+      endDrag,
+      reheat,
+      findById,
+    }),
+    [startDrag, dragTo, endDrag, reheat, findById]
+  );
 }
