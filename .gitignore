@@ -6,3 +6,4 @@ release
 .idea/
 *.log
 .vite
+.idea/

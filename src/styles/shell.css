@@ -563,11 +563,67 @@ a { color: inherit; }
 /* Hover helpers */
 [data-strip-chip]:hover { background: var(--bg-3); }
 
-/* Horizontal-scrolling strip rows in Graph.tsx. We keep the scrollbar hidden
-   but still allow wheel/trackpad scrolling — the masked fade on the right
-   already signals that more content lives offscreen. */
-.strip-row { scrollbar-width: none; }
+/* Horizontal-scrolling strip rows in Graph.tsx. */
+.graph-strip-section {
+  --strip-left-fade: 0px;
+  --strip-right-fade: 0px;
+}
+.graph-strip-section[data-can-left="true"] {
+  --strip-left-fade: 16px;
+}
+.graph-strip-section[data-can-right="true"] {
+  --strip-right-fade: 16px;
+}
+.strip-row {
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    black var(--strip-left-fade),
+    black calc(100% - var(--strip-right-fade)),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    black var(--strip-left-fade),
+    black calc(100% - var(--strip-right-fade)),
+    transparent 100%
+  );
+}
 .strip-row::-webkit-scrollbar { width: 0; height: 0; }
+.graph-strip-scroll {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  align-self: center;
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--fg-2);
+  background: var(--ui-control-bg);
+  border: 1px solid var(--ui-control-border);
+  border-radius: 7px;
+  transition:
+    opacity 0.12s ease,
+    color 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+.graph-strip-scroll:hover:not(:disabled) {
+  color: var(--fg);
+  background: var(--ui-control-bg-hover);
+  border-color: var(--ui-control-border-hover);
+}
+.graph-strip-scroll:focus-visible {
+  outline: 2px solid var(--ui-outline-soft);
+  outline-offset: 1px;
+}
+.graph-strip-scroll:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
 
 /* Loading + empty states */
 .empty {

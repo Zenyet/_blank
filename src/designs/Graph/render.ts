@@ -318,6 +318,20 @@ function drawGhost(
   ctx.restore();
 }
 
+function drawNodeMonogram(
+  ctx: CanvasRenderingContext2D,
+  n: GraphNode,
+  isGroup: boolean,
+  alpha: number
+): void {
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#fff';
+  ctx.font = `600 ${Math.round(n.radius * (isGroup ? 0.56 : 0.72))}px var(--font-mono, monospace)`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(n.letter, n.x, n.y + 1);
+}
+
 function drawNodes(
   ctx: CanvasRenderingContext2D,
   state: RenderState,
@@ -378,14 +392,24 @@ function drawNodes(
     const img = detail.favicons && !isGroup ? state.favicons.get(n.url) : null;
     if (img) {
       const s = n.radius * 1.1;
+      let drawFailed = false;
       ctx.save();
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, n.radius - 1, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(n.x - s / 2, n.y - s / 2, s, s);
-      ctx.drawImage(img, n.x - s / 2, n.y - s / 2, s, s);
-      ctx.restore();
+      try {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.radius - 1, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(n.x - s / 2, n.y - s / 2, s, s);
+        ctx.drawImage(img, n.x - s / 2, n.y - s / 2, s, s);
+      } catch {
+        drawFailed = true;
+        state.favicons.markBroken(n.url);
+        ctx.fillStyle = n.color;
+        ctx.fillRect(n.x - s / 2, n.y - s / 2, s, s);
+      } finally {
+        ctx.restore();
+      }
+      if (drawFailed) drawNodeMonogram(ctx, n, isGroup, alpha);
     }
   }
   ctx.globalAlpha = 1;
